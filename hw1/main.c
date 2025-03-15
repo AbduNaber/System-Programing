@@ -1,7 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
-
-
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <time.h>
 
 // Function prototypes
 int createDir(char *folderName);
@@ -66,4 +70,51 @@ int main(int argc, char const *argv[])
         }
    }
     return 0;
+}
+
+
+// Function to create a directory
+int createDir(char *folderName){
+
+    // Check if the directory already exists
+    struct stat st = {0};
+    if(stat(folderName, &st) == 0){
+        printf("Error: Directory %s already exists.",folderName);
+        return EXIT_FAILURE;
+    }
+    else if(mkdir(folderName) == 0 && errno != EEXIST){
+        printf("Directory created successfully\n");
+        return EXIT_SUCCESS;
+    }
+    else{
+        return EXIT_FAILURE;
+    }
+
+    
+}
+
+int createFile(char *fileName){
+
+    struct stat st = {0};
+    if(stat(fileName, &st) == 0){
+        printf("Error: File %s already exists.",fileName);
+        return EXIT_FAILURE;
+    }
+
+
+    int fd = open(fileName,O_CREAT | O_EXCL | O_WRONLY	, 0644); 
+    if(fd == -1){
+       
+        return EXIT_FAILURE;
+    }
+    else{
+        time_t timestamp = time(NULL);
+        char formatted_time[100];
+        strftime(formatted_time, sizeof(formatted_time), "%l %p", timestamp);
+        write(fd, formatted_time, strlen(formatted_time));
+        
+        close(fd);
+        return EXIT_SUCCESS;
+    }
+   
 }
