@@ -4,11 +4,13 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/file.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
 #include <dirent.h>
+
 
 // Function prototypes
 int createDir(const char *folderName);
@@ -176,16 +178,172 @@ int listDir(const char *folderName){
 
 int listFilesByExtension(const char *folderName, const char *extension){
 
-    
+    int pid = fork();
+
+    if(pid == 0){
+        DIR *mydir;
+        struct dirent *myfile;
+        mydir = opendir(folderName);
+        if(mydir == NULL){
+        if(errno == EACCES)
+            write(1,"Error: Permission denied.\n" , 27);
+        else if (errno == ENOENT)
+            write(1,"Error: Directory does not exist.\n" , 34);
+        else
+            write(1,"Error: Could not open directory.\n" , 34);
+        }
+        while((myfile = readdir(mydir)) != NULL){
+            if(strstr(myfile->d_name, extension) != NULL){
+                write(1, myfile->d_name, strlen(myfile->d_name));
+                write(1, "\n", 1);
+            }
+        }
+        
+    }
+    else{
+        int status = 0;
+        waitpid(pid, &status, 0);
+        if (status != 0){
+            write(1,"Error: Could not list directory.\n" , 34);
+            return EXIT_FAILURE;
+        }        
+    }
+    return EXIT_SUCCESS;
 }
 
-int readFile(const char *fileName){}
+int readFile(const char *fileName){
 
-int appendToFile(const char *fileName,const char *content){}
+    int fd = open(fileName, O_RDONLY);
+    if(fd == -1){
+        if(errno == EACCES){
+            write(1,"Error: Permission denied.\n" , 27);
+        }
+            
+        else if (errno == ENOENT){
+            write(1,"Error: " , 8);
+            write(1, fileName, strlen(fileName));
+            write(1," not found.\n" , 13);
+        }
+        else
+            write(1,"Error: Could not open file.\n" , 29);
+    }
+    else{
+        char buffer[1024];
+        int bytesRead = read(fd, buffer, 1024);
+        write(1, buffer, bytesRead);
+        close(fd);
+        return EXIT_SUCCESS;
+    }
 
-int deleteFile(const char *fileName){}
 
-int deleteDir(const char *folderName){}
+}
+
+int appendToFile(const char *fileName,const char *content){
+
+    int fd = open(fileName, O_WRONLY | O_APPEND);
+    if(fd == -1){
+        if(errno == EACCES){
+            write(1,"Error: " , 8);
+            write(1, fileName, strlen(fileName));
+            write(1," . File is locked or read-only.\n" , 33);
+        }
+            
+        else if (errno == ENOENT){
+            write(1,"Error: " , 8);
+            write(1, fileName, strlen(fileName));
+            write(1," not found.\n" , 13);
+        }
+        else
+            write(1,"Error: Could not open file.\n" , 29);
+    }
+    else{
+        // Lock the file
+        if (flock(fd, LOCK_EX) == -1) {
+            close(fd);
+            return 1;
+        }
+
+        // Append content to the file
+        write(fd, content, strlen(content));
+
+
+        flock(fd, LOCK_UN);
+
+        close(fd);
+        return EXIT_SUCCESS;
+}
+
+}
+
+int deleteFile(const char *fileName){
+
+    int pid = fork();
+
+    if(pid == 0){
+        if(unlink(fileName) == -1){
+            if(errno == EACCES){
+                write(1,"Error: Permission denied.\n" , 27);
+            }
+            else if (errno == ENOENT){
+                write(1,"Error: " , 8);
+                write(1, fileName, strlen(fileName));
+                write(1," not found.\n" , 13);
+            }
+            else
+                write(1,"Error: Could not delete file.\n" , 31);
+
+            _exit(1);
+        }
+        else{
+            write(1,"File deleted successfully.\n" , 28);
+        }
+
+        _exit(0);
+    }
+    else{
+        int status = 0;
+        waitpid(pid, &status, 0);
+        if (status != 0){
+            write(1,"Error: Could not delete file.\n" , 31);
+            return EXIT_FAILURE;
+        }        
+    }
+}
+
+int deleteDir(const char *folderName){
+
+    int pid = fork();
+
+    if(pid == 0){
+        if(rmdir(folderName) == -1){
+            if(errno == EACCES){
+                write(1,"Error: Permission denied.\n" , 27);
+            }
+            else if (errno == ENOENT){
+                write(1,"Error: " , 8);
+                write(1, folderName, strlen(folderName));
+                write(1," not found.\n" , 13);
+            }
+            else if (errno == ENOTEMPTY){
+                write(1,"Error: Directory is not empty.\n" , 32);
+            }
+            else
+                write(1,"Error: Could not delete directory.\n" , 35);
+
+            _exit(1);
+        }
+    
+        _exit(0);
+    }
+    else{
+        int status = 0;
+        waitpid(pid, &status, 0);
+        if (status != 0){
+            write(1,"Error: Could not delete directory.\n" , 35);
+            return EXIT_FAILURE;
+        }        
+    }
+}
 
 int showLogs(){}
 
