@@ -1,42 +1,47 @@
-#include <stdio.h>
-#include <stdlib.h>
+
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <time.h>
+#include <unistd.h>
+#include <dirent.h>
 
 // Function prototypes
-int createDir(char *folderName);
-int createFile(char *fileName);
-int listDir(char *folderName);
-int listFilesByExtension(char *folderName, char *extension);
-int readFile(char *fileName);
-int appendToFile(char *fileName, char *content);
-int deleteFile(char *fileName);
-int deleteDir(char *folderName);
+int createDir(const char *folderName);
+int createFile(const char *fileName);
+int listDir(const char *folderName);
+int listFilesByExtension(const char *folderName, const char *extension);
+int readFile(const char *fileName);
+int appendToFile(const char *fileName,const char *content);
+int deleteFile(const char *fileName);
+int deleteDir(const char *folderName);
 int showLogs();
 
+#define	EXIT_FAILURE	1	
+#define	EXIT_SUCCESS	0	
 
 
 int main(int argc, char const *argv[])
 {
-    // when user enters no arguments, show the usage
-   if(argc == 0){
-        printf("fileManager\n\n");
-        printf("Example output:\nUsage: fileManager <command> [arguments]\n\n");
-        printf("%-40s - %s\n", "createDir \"folderName\"", "Create a new directory");
-        printf("%-40s - %s\n", "createFile \"fileName\"", "Create a new file");
-        printf("%-40s - %s\n", "listDir \"folderName\"", "List all files in a directory");
-        printf("%-40s - %s\n", "listFilesByExtension \"folderName\" \".txt\"", "List files with specific extension");
-        printf("%-40s - %s\n", "readFile \"fileName\"", "Read a file's content");
-        printf("%-40s - %s\n", "appendToFile \"fileName\" \"new content\"", "Append content to a file");
-        printf("%-40s - %s\n", "deleteFile \"fileName\"", "Delete a file");
-        printf("%-40s - %s\n", "deleteDir \"folderName\"", "Delete an empty directory");
-        printf("%-40s - %s\n", "showLogs", "Display operation logs");
+    
+   if(argc == 1){
+        write(1, "fileManager\n\n", 14);
+        write(1, "Example output:\nUsage: fileManager <command> [arguments]\n\n", 59);
+        write(1, "createDir \"folderName\"                      - Create a new directory\n", 70);
+        write(1, "createFile \"fileName\"                       - Create a new file\n", 65);
+        write(1, "listDir \"folderName\"                        - List all files in a directory\n", 77);
+        write(1, "listFilesByExtension \"folderName\" \".txt\"    - List files with specific extension\n", 82);
+        write(1, "readFile \"fileName\"                         - Read a file's content\n", 69);
+        write(1, "appendToFile \"fileName\" \"new content\"       - Append content to a file\n", 72);
+        write(1, "deleteFile \"fileName\"                       - Delete a file\n", 61);
+        write(1, "deleteDir \"folderName\"                      - Delete an empty directory\n", 73);
+        write(1, "showLogs                                    - Display operation logs\n", 70);
    }
-  
+   
    else{
         if(strcmp(argv[1], "createDir") == 0 && argc == 3){
             createDir(argv[2]);
@@ -66,24 +71,33 @@ int main(int argc, char const *argv[])
             showLogs();
         }
         else{
-            printf("Invalid command\n");
+            
+            write(1, "Invalid command\n", 17);
         }
+        
    }
+   
     return 0;
 }
 
 
 // Function to create a directory
-int createDir(char *folderName){
+int createDir(const char *folderName){
+
+    if(folderName == NULL){
+        write(1,"Error: Folder name is null." , 28);
+        return EXIT_FAILURE;
+    }
 
     // Check if the directory already exists
     struct stat st = {0};
     if(stat(folderName, &st) == 0){
-        printf("Error: Directory %s already exists.",folderName);
+        write(1,"Error: Directory already exists." , 33);
         return EXIT_FAILURE;
     }
-    else if(mkdir(folderName) == 0 && errno != EEXIST){
-        printf("Directory created successfully\n");
+    else if(mkdir(folderName, 0777 ) == 0 && errno != EEXIST){
+        
+        write(1,"Directory created successfully\n" , 32);
         return EXIT_SUCCESS;
     }
     else{
@@ -93,28 +107,85 @@ int createDir(char *folderName){
     
 }
 
-int createFile(char *fileName){
+int createFile(const char *fileName){
 
-    struct stat st = {0};
-    if(stat(fileName, &st) == 0){
-        printf("Error: File %s already exists.",fileName);
-        return EXIT_FAILURE;
-    }
-
+    
 
     int fd = open(fileName,O_CREAT | O_EXCL | O_WRONLY	, 0644); 
     if(fd == -1){
        
-        return EXIT_FAILURE;
+        if(errno == EEXIST){
+            write(1,"Error: File already exists.\n" , 29);
+        }
+        else if (errno == EACCES){
+            write(1,"Error: Permission denied.\n" , 27);
+        }
+        else {
+            write(1,"Error: File could not be created.\n" , 35);
+        }
     }
     else{
-        time_t timestamp = time(NULL);
-        char formatted_time[100];
-        strftime(formatted_time, sizeof(formatted_time), "%l %p", timestamp);
-        write(fd, formatted_time, strlen(formatted_time));
         
+        time_t timestamp = time(NULL);
+        char * timeStr = ctime(&timestamp);
+        write(fd, timeStr, strlen(timeStr));
         close(fd);
         return EXIT_SUCCESS;
     }
    
 }
+
+
+int listDir(const char *folderName){
+
+    int pid = fork();
+
+    if(pid == 0){
+        DIR *mydir;
+        struct dirent *myfile;
+        mydir = opendir(folderName);
+        if(mydir == NULL){
+        if(errno == EACCES)
+            write(1,"Error: Permission denied.\n" , 27);
+        else if (errno == ENOENT)
+            write(1,"Error: Directory does not exist.\n" , 34);
+        else
+            write(1,"Error: Could not open directory.\n" , 34);
+        }
+        while((myfile = readdir(mydir)) != NULL){
+        write(1, myfile->d_name, strlen(myfile->d_name));
+        write(1, "\n", 1);
+        }
+        closedir(mydir);
+        _exit(0);
+        
+    }
+    else{
+        int status = 0;
+        waitpid(pid, &status, 0);
+        if (status != 0){
+            write(1,"Error: Could not list directory.\n" , 34);
+            return EXIT_FAILURE;
+        }        
+    }
+    return EXIT_SUCCESS;
+    
+    
+    
+}
+
+int listFilesByExtension(const char *folderName, const char *extension){
+
+    
+}
+
+int readFile(const char *fileName){}
+
+int appendToFile(const char *fileName,const char *content){}
+
+int deleteFile(const char *fileName){}
+
+int deleteDir(const char *folderName){}
+
+int showLogs(){}
+

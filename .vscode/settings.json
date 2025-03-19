@@ -3,6 +3,10 @@
         "errno.h": "c",
         "stdlib.h": "c",
         "fcntl.h": "c",
-        "time.h": "c"
+        "time.h": "c",
+        "unistd.h": "c",
+        "string.h": "c",
+        "dirent.h": "c",
+        "cstdlib": "c"
     }
 }
