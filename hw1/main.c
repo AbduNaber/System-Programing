@@ -99,7 +99,11 @@ int createDir(const char *folderName){
     }
     else if(mkdir(folderName, 0777 ) == 0 && errno != EEXIST){
         
-        write(1,"Directory created successfully\n" , 32);
+        char message[100];
+        strcat(message, "Directory ");
+        strcat(message, folderName);
+        strcat(message, " created successfully.\n");
+        log(message);
         return EXIT_SUCCESS;
     }
     else{
@@ -132,6 +136,13 @@ int createFile(const char *fileName){
         char * timeStr = ctime(&timestamp);
         write(fd, timeStr, strlen(timeStr));
         close(fd);
+
+        char message[100];
+        strcat(message, "File ");
+        strcat(message, fileName);
+        strcat(message, " created successfully.\n");
+        log(message);
+
         return EXIT_SUCCESS;
     }
    
@@ -159,6 +170,11 @@ int listDir(const char *folderName){
         write(1, "\n", 1);
         }
         closedir(mydir);
+        char message[100];
+        strcat(message, "Listed files in directory ");
+        strcat(message, folderName);
+        strcat(message, ".\n");
+        log(message);
         _exit(0);
         
     }
@@ -170,6 +186,8 @@ int listDir(const char *folderName){
             return EXIT_FAILURE;
         }        
     }
+
+    
     return EXIT_SUCCESS;
     
     
@@ -198,6 +216,15 @@ int listFilesByExtension(const char *folderName, const char *extension){
                 write(1, "\n", 1);
             }
         }
+        closedir(mydir);
+        char message[100];
+        strcat(message, "Listed files in directory ");
+        strcat(message, folderName);
+        strcat(message, " with extension ");
+        strcat(message, extension);
+        strcat(message, ".\n");
+        log(message);
+        _exit(0);
         
     }
     else{
@@ -232,6 +259,13 @@ int readFile(const char *fileName){
         int bytesRead = read(fd, buffer, 1024);
         write(1, buffer, bytesRead);
         close(fd);
+        
+        char message[100];
+        strcat(message, "Read file ");
+        strcat(message, fileName);
+        strcat(message, ".\n");
+        log(message);
+
         return EXIT_SUCCESS;
     }
 
@@ -270,6 +304,13 @@ int appendToFile(const char *fileName,const char *content){
         flock(fd, LOCK_UN);
 
         close(fd);
+
+        char message[100];
+        strcat(message, "Appended content to file ");
+        strcat(message, fileName);
+        strcat(message, ".\n");
+        log(message);
+
         return EXIT_SUCCESS;
 }
 
@@ -295,7 +336,11 @@ int deleteFile(const char *fileName){
             _exit(1);
         }
         else{
-            write(1,"File deleted successfully.\n" , 28);
+            char message[100];
+            strcat(message, "Deleted file ");
+            strcat(message, fileName);
+            strcat(message, ".\n");
+            log(message);
         }
 
         _exit(0);
@@ -332,7 +377,13 @@ int deleteDir(const char *folderName){
 
             _exit(1);
         }
-    
+        else{
+            char message[100];
+            strcat(message, "directory ");
+            strcat(message, folderName);
+            strcat(message, " deleted\n");
+            log(message);
+        }
         _exit(0);
     }
     else{
@@ -371,5 +422,25 @@ void log(const char *message){
 }
 
 
-int showLogs(){}
+int showLogs(){
+    int fd = open("log.txt", O_RDONLY);
+    if(fd == -1){
+        if(errno == EACCES){
+            write(1,"Error: Permission denied for log.txt\n" , 27);
+        }
+        else{
+            write(1,"Error: Could not open log file.\n" , 33);
+        }
+    }
+    else{
+        char buffer[1024];
+        int bytesRead = read(fd, buffer, 1024);
+        write(1, buffer, bytesRead);
+        close(fd);
+    }
+    char message[100];
+    strcat(message, "Displayed logs.\n");
+    log(message);
+    return EXIT_SUCCESS;
+}
 
