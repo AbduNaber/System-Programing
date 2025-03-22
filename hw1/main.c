@@ -22,7 +22,7 @@ int appendToFile(const char *fileName,const char *content);
 int deleteFile(const char *fileName);
 int deleteDir(const char *folderName);
 int showLogs();
-void log(const char *message);
+void log_message(const char *message);
 #define	EXIT_FAILURE	1	
 #define	EXIT_SUCCESS	0	
 
@@ -103,7 +103,7 @@ int createDir(const char *folderName){
         strcat(message, "Directory ");
         strcat(message, folderName);
         strcat(message, " created successfully.\n");
-        log(message);
+        log_message(message);
         return EXIT_SUCCESS;
     }
     else{
@@ -141,7 +141,7 @@ int createFile(const char *fileName){
         strcat(message, "File ");
         strcat(message, fileName);
         strcat(message, " created successfully.\n");
-        log(message);
+        log_message(message);
 
         return EXIT_SUCCESS;
     }
@@ -174,7 +174,7 @@ int listDir(const char *folderName){
         strcat(message, "Listed files in directory ");
         strcat(message, folderName);
         strcat(message, ".\n");
-        log(message);
+        log_message(message);
         _exit(0);
         
     }
@@ -223,7 +223,7 @@ int listFilesByExtension(const char *folderName, const char *extension){
         strcat(message, " with extension ");
         strcat(message, extension);
         strcat(message, ".\n");
-        log(message);
+        log_message(message);
         _exit(0);
         
     }
@@ -264,7 +264,7 @@ int readFile(const char *fileName){
         strcat(message, "Read file ");
         strcat(message, fileName);
         strcat(message, ".\n");
-        log(message);
+        log_message(message);
 
         return EXIT_SUCCESS;
     }
@@ -309,7 +309,7 @@ int appendToFile(const char *fileName,const char *content){
         strcat(message, "Appended content to file ");
         strcat(message, fileName);
         strcat(message, ".\n");
-        log(message);
+        log_message(message);
 
         return EXIT_SUCCESS;
 }
@@ -340,7 +340,7 @@ int deleteFile(const char *fileName){
             strcat(message, "Deleted file ");
             strcat(message, fileName);
             strcat(message, ".\n");
-            log(message);
+            log_message(message);
         }
 
         _exit(0);
@@ -382,7 +382,7 @@ int deleteDir(const char *folderName){
             strcat(message, "directory ");
             strcat(message, folderName);
             strcat(message, " deleted\n");
-            log(message);
+            log_message(message);
         }
         _exit(0);
     }
@@ -397,7 +397,7 @@ int deleteDir(const char *folderName){
 }
 
 
-void log(const char *message){
+void log_message(const char *message){
     int fd = open("log.txt", O_CREAT |  O_WRONLY | O_APPEND, 0644);
     if(fd == -1){
        if (errno == EACCES){
@@ -440,7 +440,7 @@ int showLogs(){
     }
     char message[100];
     strcat(message, "Displayed logs.\n");
-    log(message);
+    log_message(message);
     return EXIT_SUCCESS;
 }
 
