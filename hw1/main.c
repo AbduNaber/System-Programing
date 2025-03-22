@@ -22,7 +22,7 @@ int appendToFile(const char *fileName,const char *content);
 int deleteFile(const char *fileName);
 int deleteDir(const char *folderName);
 int showLogs();
-
+void log(const char *message);
 #define	EXIT_FAILURE	1	
 #define	EXIT_SUCCESS	0	
 
@@ -344,6 +344,32 @@ int deleteDir(const char *folderName){
         }        
     }
 }
+
+
+void log(const char *message){
+    int fd = open("log.txt", O_CREAT |  O_WRONLY | O_APPEND, 0644);
+    if(fd == -1){
+       if (errno == EACCES){
+           write(1,"Error: Permission denied for log.txt\n" , 27);
+       }
+       else{
+           write(1,"Error: Could not open log file.\n" , 33);
+       }
+    }
+    else{
+        time_t timestamp = time(NULL);
+        char * timeStr = ctime(&timestamp);
+        write(fd, timeStr, strlen(timeStr));
+        write(fd, " ", 2);
+        write(fd, message, strlen(message));
+        write(fd, "\n", 2);
+        close(fd);
+    }
+
+
+
+}
+
 
 int showLogs(){}
 
