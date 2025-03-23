@@ -129,22 +129,23 @@ int createFile(const char *fileName){
         else {
             write(1,"Error: File could not be created.\n" , 35);
         }
+        return EXIT_FAILURE;
     }
-    else{
+   
         
-        time_t timestamp = time(NULL);
-        char * timeStr = ctime(&timestamp);
-        write(fd, timeStr, strlen(timeStr));
-        close(fd);
+    time_t timestamp = time(NULL);
+    char * timeStr = ctime(&timestamp);
+    write(fd, timeStr, strlen(timeStr));
+    close(fd);
 
-        char message[100];
-        strcat(message, "File ");
-        strcat(message, fileName);
-        strcat(message, " created successfully.\n");
-        log_message(message);
+    char message[100];
+    strcat(message, "File ");
+    strcat(message, fileName);
+    strcat(message, " created successfully.\n");
+    log_message(message);
 
-        return EXIT_SUCCESS;
-    }
+    return EXIT_SUCCESS;
+    
    
 }
 
@@ -253,21 +254,23 @@ int readFile(const char *fileName){
         }
         else
             write(1,"Error: Could not open file.\n" , 29);
-    }
-    else{
-        char buffer[1024];
-        int bytesRead = read(fd, buffer, 1024);
-        write(1, buffer, bytesRead);
-        close(fd);
-        
-        char message[100];
-        strcat(message, "Read file ");
-        strcat(message, fileName);
-        strcat(message, ".\n");
-        log_message(message);
 
-        return EXIT_SUCCESS;
+        return EXIT_FAILURE;
     }
+    
+    char buffer[1024];
+    int bytesRead = read(fd, buffer, 1024);
+    write(1, buffer, bytesRead);
+    close(fd);
+    
+    char message[100];
+    strcat(message, "Read file ");
+    strcat(message, fileName);
+    strcat(message, ".\n");
+    log_message(message);
+
+    return EXIT_SUCCESS;
+
 
 
 }
@@ -289,30 +292,32 @@ int appendToFile(const char *fileName,const char *content){
         }
         else
             write(1,"Error: Could not open file.\n" , 29);
+        
+        return EXIT_FAILURE;
     }
-    else{
-        // Lock the file
-        if (flock(fd, LOCK_EX) == -1) {
-            close(fd);
-            return 1;
-        }
-
-        // Append content to the file
-        write(fd, content, strlen(content));
-
-
-        flock(fd, LOCK_UN);
-
+    
+    // Lock the file
+    if (flock(fd, LOCK_EX) == -1) {
         close(fd);
+        return 1;
+    }
 
-        char message[100];
-        strcat(message, "Appended content to file ");
-        strcat(message, fileName);
-        strcat(message, ".\n");
-        log_message(message);
+    // Append content to the file
+    write(fd, content, strlen(content));
 
-        return EXIT_SUCCESS;
-}
+
+    flock(fd, LOCK_UN);
+
+    close(fd);
+
+    char message[100];
+    strcat(message, "Appended content to file ");
+    strcat(message, fileName);
+    strcat(message, ".\n");
+    log_message(message);
+
+    return EXIT_SUCCESS;
+
 
 }
 
@@ -353,6 +358,8 @@ int deleteFile(const char *fileName){
             return EXIT_FAILURE;
         }        
     }
+
+    return EXIT_SUCCESS;
 }
 
 int deleteDir(const char *folderName){
@@ -394,31 +401,34 @@ int deleteDir(const char *folderName){
             return EXIT_FAILURE;
         }        
     }
+
+    return EXIT_SUCCESS;
 }
 
-
-void log_message(const char *message){
-    int fd = open("log.txt", O_CREAT |  O_WRONLY | O_APPEND, 0644);
-    if(fd == -1){
-       if (errno == EACCES){
-           write(1,"Error: Permission denied for log.txt\n" , 27);
-       }
-       else{
-           write(1,"Error: Could not open log file.\n" , 33);
-       }
-    }
-    else{
+void log_message(const char *message) {
+    int fd = open("log.txt", O_CREAT | O_WRONLY | O_APPEND, 0644);
+    if (fd == -1) {
+        if (errno == EACCES) {
+            write(1, "Error: Permission denied for log.txt\n", 37);
+        } else {
+            write(1, "Error: Could not open log file.\n", 33);
+        }
+    } else {
+        // Get time
         time_t timestamp = time(NULL);
-        char * timeStr = ctime(&timestamp);
+        struct tm *timeinfo = localtime(&timestamp);
+        
+        // Format time manually to avoid newline and control exact format
+        char timeStr[30];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", timeinfo);
+        
+        // Write formatted log entry
         write(fd, timeStr, strlen(timeStr));
-        write(fd, " ", 2);
+        write(fd, " - ", 3);
         write(fd, message, strlen(message));
-        write(fd, "\n", 2);
+        write(fd, "\n", 1);
         close(fd);
     }
-
-
-
 }
 
 
