@@ -53,7 +53,7 @@ int daemon_initialise() {
         
     }
 
-    int log_fd = open(LOG_PATH, O_CREAT | O_WRONLY | O_APPEND , 0666);  
+    int log_fd = open(LOG_PATH, O_CREAT | O_WRONLY | O_APPEND , 0777);  
 
     if (log_fd == -1) {
         
@@ -89,7 +89,9 @@ int main() {
     
     while(1){
         printf("test\n");
-        sleep(50);
+        fflush(stdout); 
+        
+        sleep(1);
     }
 
     
