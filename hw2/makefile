@@ -15,9 +15,10 @@ all: $(TARGET)
 $(TARGET): $(SRC)
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
 	rm log.txt
-	./$(TARGET) 1 2
-
 	
+
+run: 
+	./$(TARGET) 1 2	
 # Clean up build files
 clean:
 	rm -f $(TARGET)

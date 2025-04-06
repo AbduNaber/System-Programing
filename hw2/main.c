@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <time.h>
 
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
@@ -54,10 +55,10 @@ int daemon_procces( ) {
     // change the working directory to root
     if (chdir("/") < 0) {
         if(errno == EACCES) {
-            write(STDERR_FILENO, "Error, Permission Denied.\n" , 27);
+            perror("Error, Permission Denied for deamon\n");
         }
         else {
-            write(STDERR_FILENO, "Error, chdir() failed.\n", 24);
+           perror("Error, chdir() failed in deamon.\n");
         }
     }
 
@@ -108,6 +109,7 @@ int daemon_procces( ) {
 
 int main(int argc, char *argv[]) {
 
+    time_t start_time = time(NULL);
 
     if(argc != 3) {
 
@@ -132,7 +134,7 @@ int main(int argc, char *argv[]) {
     if (daemon_procces() < 0) {
         _exit(EXIT_FAILURE);
     }
-
+    write(1, "Daemon process created successfully.\n", 38);
     
     
     int result = 0;
@@ -149,17 +151,17 @@ int main(int argc, char *argv[]) {
     // Create the first pipe
     if (mkfifo(fifo1, 0666) == -1) {
         if (errno == EEXIST) {
-            printf("Note: pipe1 already exists, continuing...\n");
+            write(1, "Note: pipe1 already exists, continuing...\n", 43);
         } else {
             perror("Error creating pipe1");
             return EXIT_FAILURE;
         }
     }
-    
+    write(1, "pipe1 created successfully.\n", 29);
     // Create the second pipe
     if (mkfifo(fifo2, 0666) == -1) {
         if (errno == EEXIST) {
-            printf("Note: pipe2 already exists, continuing...\n");
+            write(1, "Note: pipe2 already exists, continuing...\n", 43);
         } else {
             perror("Error creating pipe2");
             // Clean up resources before exiting
@@ -167,38 +169,11 @@ int main(int argc, char *argv[]) {
             return EXIT_FAILURE;
         }
     }
+    write(1, "pipe2 created successfully.\n", 29);
     
-    // Open the first pipe for writing
-    fifo1_fd = open(fifo1, O_WRONLY);
-    if (fifo1_fd == -1) {
-        if (errno == ENOENT) {
-            perror("Error opening pipe1 due to non-existing file");
-        } else {
-            perror("Error opening pipe1");
-        }
-        // Clean up resources before exiting
-        unlink(fifo1);
-        unlink(fifo2);
-        return EXIT_FAILURE;
-    }
     
-    // Open the second pipe for writing
-    fifo2_fd = open(fifo2, O_WRONLY);
-    if (fifo2_fd == -1) {
-        if (errno == ENOENT) {
-            perror("Error opening pipe2 due to non-existing file");
-        } else {
-            perror("Error opening pipe2");
-        }
-        // Clean up resources before exiting
-        close(fifo1_fd);
-        unlink(fifo1);
-        unlink(fifo2);
-        return EXIT_FAILURE;
-    }
 
-    write(fifo1_fd, &arg1, sizeof(arg1));
-    write(fifo1_fd, &arg2, sizeof(arg2));
+
    
     int pid1 = fork();
     process_count++;
@@ -211,10 +186,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     } 
     else if (pid1 == 0) {
-        
-        
-        child1(fifo1_fd);
-        // Close the FIFO file descriptor
+        write(1, "Child process 1 created successfully.\n", 39);
+        child1(fifo1);
         _exit(EXIT_SUCCESS);
     } 
     else {
@@ -231,27 +204,67 @@ int main(int argc, char *argv[]) {
         } 
         else if (pid2 == 0) {
             // Child process 2
-            
-            child2(fifo2_fd);
-            
+            write(1, "Child process 2 created successfully.\n", 39);
+            child2(fifo2);
             _exit(EXIT_SUCCESS);
         }
+        int fifo1_fd = open(fifo1, O_WRONLY);
+        if (fifo1_fd == -1) {
+            if (errno == ENOENT) {
+                perror("Error opening pipe1 due to non-existing file");
+            } else {
+                perror("Error opening pipe1");
+            }
+            return EXIT_FAILURE;
+        }
+        // Write the integers to the FIFO 1
+        if (write(fifo1_fd, &arg1, sizeof(arg1)) == -1) {
+            perror("Error writing to pipe1");
+            close(fifo1_fd);
+            return EXIT_FAILURE;
+        }
+        if (write(fifo1_fd, &arg2, sizeof(arg2)) == -1) {
+            perror("Error writing to pipe1");
+            close(fifo1_fd);
+            return EXIT_FAILURE;
+        }
+        write(1, "Parent process wrote to pipe1 successfully.\n", 45);
 
-        // Parent process
-        // Wait for child processes to finish
+        
         int status;
-        waitpid(pid1, &status, 0);
-        if (WIFEXITED(status)) {
-            printf("Child process 1 exited with status %d\n", WEXITSTATUS(status));
-        } else {
-            printf("Child process 1 terminated abnormally\n");
+        int exited1 = 0, exited2 = 0;
+        // Parent process
+        write(1, "Parent process waiting for child processes to exit...\n", 55);
+        while (!exited1 || !exited2) {
+            if (!exited1) {
+                pid_t result = waitpid(pid1, &status, WNOHANG);
+                if (result == pid1) {
+                    if (WIFEXITED(status)) {
+                        printf("Child process 1 exited with status %d\n", WEXITSTATUS(status));
+                    } else {
+                        printf("Child process 1 terminated abnormally\n");
+                    }
+                    exited1 = 1;
+                }
+            }
+    
+            if (!exited2) {
+                pid_t result = waitpid(pid2, &status, WNOHANG);
+                if (result == pid2) {
+                    if (WIFEXITED(status)) {
+                        printf("Child process 2 exited with status %d\n", WEXITSTATUS(status));
+                    } else {
+                        printf("Child process 2 terminated abnormally\n");
+                    }
+                    exited2 = 1;
+                }
+            }
+    
+            write(STDOUT_FILENO, "proceeding\n", 12);
+            
+            sleep(1); // Wait 1 second before checking again
         }
-        waitpid(pid2, &status, 0);
-        if (WIFEXITED(status)) {
-            printf("Child process 2 exited with status %d\n", WEXITSTATUS(status));
-        } else {
-            printf("Child process 2 terminated abnormally\n");
-        }
+
         // Close the FIFO file descriptors
         close_all_fifo(fifo1_fd, fifo2_fd, fifo1, fifo2);
        
@@ -263,19 +276,19 @@ int main(int argc, char *argv[]) {
 }
 
 
-int child1(char *fifo1) {
-
-    sleep(10);
+int child1(const char *fifo1) {
 
     int fifo1_fd = open(fifo1, O_RDONLY);
     if (fifo1_fd == -1) {
         if (errno == ENOENT) {
             perror("Error opening pipe1 due to non-existing file");
         } else {
-            perror("Error opening pipe1");
+            perror("1Error opening pipe1");
         }
         return EXIT_FAILURE;
     }
+    sleep(10);
+    
 
     int arg1, arg2;
     // Read the integers from the FIFO
@@ -316,17 +329,19 @@ int child1(char *fifo1) {
 }
 
 
-int child2(char *fifo2) {
-    sleep(10);
+int child2(const char *fifo2) {
     int fifo2_fd = open(fifo2, O_RDONLY);
     if (fifo2_fd == -1) {
         if (errno == ENOENT) {
             perror("Error opening pipe2 due to non-existing file");
         } else {
-            perror("Error opening pipe2");
+            perror("2Error opening pipe2");
         }
         return EXIT_FAILURE;
     }
+    sleep(10); // sleep for 10 seconds
+    
+    write(1, "Child process 2 is running...\n", 31);
     int biggest;
     // Read the biggest number from the FIFO
     if (read(fifo2_fd, &biggest, sizeof(biggest)) == -1) {
@@ -336,7 +351,6 @@ int child2(char *fifo2) {
     }
     printf("The biggest number is: %d\n", biggest);
     
-   
     _exit(EXIT_SUCCESS);
 }
 
