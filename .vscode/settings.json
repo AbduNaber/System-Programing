@@ -9,6 +9,8 @@
         "dirent.h": "c",
         "cstdlib": "c",
         "*.tcc": "c",
-        "fstream": "c"
+        "fstream": "c",
+        "wait.h": "c",
+        "signal.h": "c"
     }
 }

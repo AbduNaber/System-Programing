@@ -13,7 +13,11 @@
 #define EXIT_FAILURE 1
 
 
+
 #define LOG_PATH "/home/abdu/System-Programing/hw2/log.txt"
+#define FIFO1_PATH "/tmp/fifo1"
+#define FIFO2_PATH "/tmp/fifo2"
+#define DAEMON_FIFO_PATH "/tmp/daemon_fifo"
 
 static int process_count = 0;
 
@@ -95,15 +99,32 @@ int daemon_procces( ) {
     dup2(log_fd, STDOUT_FILENO);   // Redirect stdout to log file
     dup2(log_fd, STDERR_FILENO);   // Redirect stderr to log file
 
-    const char *message = "Daemon is running...\n";
-    
+    int deamon_fifo_fd = open(DAEMON_FIFO_PATH, O_RDWR);
+    if (deamon_fifo_fd == -1) {
+        if (errno == ENOENT) {
+            perror("Error opening deamon_pipe due to non-existing file");
+        } else {
+            perror("Error opening deamon_pipe");
+        }
+       
+        _exit(EXIT_FAILURE);
+    }
+    char message[256];
+    strcpy(message, "Daemon process started successfully.\n");
+    write(STDOUT_FILENO, message, strlen(message));
     // Main daemon loop
+    //const char *message = "Daemon is running...\n";
     while (1) {
         sleep(1);
+        // read(deamon_fifo_fd, message, sizeof(message));
+        // if (strlen(message) > 0) {
+        //     write_msg(message, STDOUT_FILENO);
+        //     memset(message, 0, sizeof(message)); // Clear the message buffer
+        // }
         write(STDOUT_FILENO, message, strlen(message));
     }
 
-    return 0; // Daemon initialized successfully
+    _exit(EXIT_SUCCESS);
 
 }
 
@@ -130,11 +151,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // create the daemon process
-    if (daemon_procces() < 0) {
-        _exit(EXIT_FAILURE);
-    }
-    write(1, "Daemon process created successfully.\n", 38);
+    
     
     
     int result = 0;
@@ -143,17 +160,19 @@ int main(int argc, char *argv[]) {
 
 
     
-    const char *fifo1 = "pipe1";
-    const char *fifo2 = "pipe2";
+    const char *fifo1 = FIFO1_PATH;
+    const char *fifo2 = FIFO2_PATH;
+    const char *deamon_fifo = DAEMON_FIFO_PATH;
     int fifo1_fd = -1;
     int fifo2_fd = -1;
+    int deamon_fifo_fd = -1;
     
     // Create the first pipe
     if (mkfifo(fifo1, 0666) == -1) {
         if (errno == EEXIST) {
             write(1, "Note: pipe1 already exists, continuing...\n", 43);
         } else {
-            perror("Error creating pipe1");
+            perror("Error creatinaaag pipe1");
             return EXIT_FAILURE;
         }
     }
@@ -170,7 +189,27 @@ int main(int argc, char *argv[]) {
         }
     }
     write(1, "pipe2 created successfully.\n", 29);
+
+    // Create the deamon pipe
+    if (mkfifo(deamon_fifo, 0666) == -1) {
+        if (errno == EEXIST) {
+            write(1, "Note: deamon_pipe already exists, continuing...\n", 50);
+        } else {
+            perror("Error creating deamon_pipe");
+            // Clean up resources before exiting
+            unlink(fifo1);
+            unlink(fifo2);
+            return EXIT_FAILURE;
+        }
+    }
+    write(1, "deamon_pipe created successfully.\n", 35);
     
+    // create the daemon process
+    if (daemon_procces() < 0) {
+        _exit(EXIT_FAILURE);
+    }
+    sleep(1);
+    write(1, "Daemon process created successfully.\n", 38);
     
 
 
@@ -287,6 +326,17 @@ int child1(const char *fifo1) {
         }
         return EXIT_FAILURE;
     }
+    int deamon_fifo_fd = open(DAEMON_FIFO_PATH, O_WRONLY);
+    if (deamon_fifo_fd == -1) {
+        if (errno == ENOENT) {
+            perror("Error opening deamon_pipe due to non-existing file");
+        } else {
+            perror("Error opening deamon_pipe");
+        }
+        close(fifo1_fd);
+        return EXIT_FAILURE;
+    }
+
     sleep(10);
     
 
@@ -302,10 +352,10 @@ int child1(const char *fifo1) {
         close(fifo1_fd);
         return EXIT_FAILURE;
     }
-
+    write(deamon_fifo_fd, "Child process 1 is running...\n", 31);
     int biggest = arg1 > arg2 ? arg1 : arg2;
 
-    int fifo2_fd = open("pipe2", O_WRONLY);
+    int fifo2_fd = open(FIFO2_PATH, O_WRONLY);
     if (fifo2_fd == -1) {
         if (errno == ENOENT) {
             perror("Error opening pipe2 due to non-existing file");
@@ -339,8 +389,19 @@ int child2(const char *fifo2) {
         }
         return EXIT_FAILURE;
     }
+    write(1, "Child process 2 created succesaasfully.\n", 39);
+    int deamon_fifo_fd = open(DAEMON_FIFO_PATH, O_WRONLY);
+    if (deamon_fifo_fd == -1) {
+        if (errno == ENOENT) {
+            perror("Error opening deamon_pipe due to non-existing file");
+        } else {
+            perror("Error opening deamon_pipe");
+        }
+        close(fifo2_fd);
+        return EXIT_FAILURE;
+    }
     sleep(10); // sleep for 10 seconds
-    
+    write(deamon_fifo_fd, "Child process 2 is running...\n", 31);
     write(1, "Child process 2 is running...\n", 31);
     int biggest;
     // Read the biggest number from the FIFO
@@ -352,6 +413,12 @@ int child2(const char *fifo2) {
     printf("The biggest number is: %d\n", biggest);
     
     _exit(EXIT_SUCCESS);
+}
+
+void write_msg(const char *msg, int fd) {
+    if (write(fd, msg, strlen(msg)) == -1) {
+        perror("Error writing to log file");
+    }
 }
 
 /**
