@@ -116,12 +116,12 @@ int daemon_procces( ) {
     //const char *message = "Daemon is running...\n";
     while (1) {
         sleep(1);
-        // read(deamon_fifo_fd, message, sizeof(message));
-        // if (strlen(message) > 0) {
-        //     write_msg(message, STDOUT_FILENO);
-        //     memset(message, 0, sizeof(message)); // Clear the message buffer
-        // }
-        write(STDOUT_FILENO, message, strlen(message));
+        read(deamon_fifo_fd, message, sizeof(message));
+        if (strlen(message) > 0) {
+            write_msg(message, STDOUT_FILENO);
+            memset(message, 0, sizeof(message)); // Clear the message buffer
+        }
+       
     }
 
     _exit(EXIT_SUCCESS);
@@ -389,7 +389,7 @@ int child2(const char *fifo2) {
         }
         return EXIT_FAILURE;
     }
-    write(1, "Child process 2 created succesaasfully.\n", 39);
+    
     int deamon_fifo_fd = open(DAEMON_FIFO_PATH, O_WRONLY);
     if (deamon_fifo_fd == -1) {
         if (errno == ENOENT) {
@@ -402,7 +402,7 @@ int child2(const char *fifo2) {
     }
     sleep(10); // sleep for 10 seconds
     write(deamon_fifo_fd, "Child process 2 is running...\n", 31);
-    write(1, "Child process 2 is running...\n", 31);
+   
     int biggest;
     // Read the biggest number from the FIFO
     if (read(fifo2_fd, &biggest, sizeof(biggest)) == -1) {
