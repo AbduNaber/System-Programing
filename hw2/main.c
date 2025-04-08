@@ -9,12 +9,10 @@
 #include <signal.h>
 #include <time.h>
 #include <stdlib.h>
+
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
-
-
-
-#define LOG_PATH "/home/abdu/System-Programing/hw2/log.txt"
+#define LOG_PATH "/tmp/log.txt"
 #define FIFO1_PATH "/tmp/fifo1"
 #define FIFO2_PATH "/tmp/fifo2"
 #define DAEMON_FIFO_PATH "/tmp/daemon_fifo"
@@ -29,10 +27,16 @@ void close_all_fifo(int fifo1_fd, int fifo2_fd , const char *fifo1, const char *
 
 void deamon_handle_signal(int sig) {
     if (sig == SIGTERM) {
-        write(STDOUT_FILENO, "Received SIGTERM\n", 17);
+        write(STDOUT_FILENO, "Received SIGTERM\n", 18);
+        // clean up resources
+        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
+        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
         _exit(EXIT_SUCCESS);
     } else if (sig == SIGINT) {
         write(STDOUT_FILENO, "Received SIGINT\n", 16);
+        // clean up resources
+        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
+        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
         _exit(EXIT_SUCCESS);
     } else if (sig == SIGQUIT) {
         write(STDOUT_FILENO, "Received SIGQUIT\n", 17);
@@ -52,8 +56,6 @@ int daemon_procces( ) {
     
         return 0;
     }
-    
-    
     
     //Create a new session
     if (setsid() < 0) {
@@ -89,8 +91,6 @@ int daemon_procces( ) {
     umask(0);
 
 
-    
-    
     /// Close all open file descriptors
     int x;
     for (x = sysconf(_SC_OPEN_MAX); x >= 0; x--) {
@@ -113,7 +113,6 @@ int daemon_procces( ) {
         return 1;
     }
 
-    
     dup2(dev_null, STDIN_FILENO);  // Redirect stdin to /dev/null
     dup2(log_fd, STDOUT_FILENO);   // Redirect stdout to log file
     dup2(log_fd, STDERR_FILENO);   // Redirect stderr to log file
@@ -134,7 +133,6 @@ int daemon_procces( ) {
     sa.sa_handler = deamon_handle_signal;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART; // recommended for system calls
-    
     
     if (sigaction(SIGUSR1, &sa, NULL) == -1) {
         perror("sigaction");
@@ -198,12 +196,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    
-
     int arg1 = atoi(argv[1]);
     int arg2 = atoi(argv[2]);
 
-    
     const char *fifo1 = FIFO1_PATH;
     const char *fifo2 = FIFO2_PATH;
     const char *deamon_fifo = DAEMON_FIFO_PATH;
@@ -335,6 +330,7 @@ int main(int argc, char *argv[]) {
         // Parent process
         write(1, "Parent process waiting for child processes to exit...\n", 55);
         while (!exited1 || !exited2) {
+            write(STDOUT_FILENO, "proceeding\n", 12);
             if (!exited1) {
                 pid_t result = waitpid(pid1, &status, WNOHANG);
                 if (result == pid1) {
@@ -352,7 +348,6 @@ int main(int argc, char *argv[]) {
                 pid_t result = waitpid(pid2, &status, WNOHANG);
                 if (result == pid2) {
                     if (WIFEXITED(status)) {
-                        
                         printf("Child process 2 exited with status %d\n", WEXITSTATUS(status));
                     } else {
                         printf("Child process 2 terminated abnormally\n");
@@ -360,9 +355,6 @@ int main(int argc, char *argv[]) {
                     exited2 = 1;
                 }
             }
-    
-            write(STDOUT_FILENO, "proceeding\n", 12);
-            
             sleep(1); // Wait 1 second before checking again
         }
 
@@ -374,13 +366,12 @@ int main(int argc, char *argv[]) {
     
     write_msg("Parent process finished successfully.\n", deamon_fifo_fd);
     write_msg("exit", deamon_fifo_fd); 
+    printf("Parent process exited with status %d\n", EXIT_SUCCESS);
     return 0;
 }
 
 
 int child1(const char *fifo1) {
-
-    
 
     sleep(10);
 
@@ -468,7 +459,6 @@ int child2(const char *fifo2) {
         return EXIT_FAILURE;
     }
     write_msg("Child process 2 is running...\n", deamon_fifo_fd);
-    printf("Child process 2 is running...\n");
     int biggest;
     // Read the biggest number from the FIFO
     if (read(fifo2_fd, &biggest, sizeof(biggest)) == -1) {
@@ -520,7 +510,6 @@ int SIGCHLD_handler(int signum ) {
     if(signum != SIGCHLD) {
         return -1;
     }
-
     pid = waitpid(-1, &status, WNOHANG);
     if (pid == -1) {
         perror("waitpid");
@@ -537,19 +526,11 @@ int SIGCHLD_handler(int signum ) {
         // Child process terminated abnormally
         printf("Child process %d terminated abnormally\n", pid);
     }
-
-    // Decrement the process count
-    // and check if all child processes have exited
-    // If all child processes have exited, exit the daemon
     if(process_count > 0) {
         process_count--;
-
     }
-    else if (process_count == 0) {
-        
+    else if (process_count == 0) { 
         _exit(EXIT_SUCCESS);
     }
-   
-    
     return 0;
 }

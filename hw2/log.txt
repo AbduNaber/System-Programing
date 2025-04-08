@@ -1,8 +1,0 @@
-[Tue Apr  8 17:22:47 2025] Main process ID: 7719
-[Tue Apr  8 17:22:47 2025] Child process 1 ID: 7722
-[Tue Apr  8 17:22:47 2025] Child process 2 ID: 7723
-[Tue Apr  8 17:22:57 2025] Child process 1 is running...
-[Tue Apr  8 17:22:57 2025] Child process 2 is running...
-[Tue Apr  8 17:22:57 2025] Child process 2 finished successfully.
-[Tue Apr  8 17:22:58 2025] Parent process finished successfully.
-exit
