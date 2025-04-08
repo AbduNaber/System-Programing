@@ -27,7 +27,18 @@ int daemon_procces( );
 void write_msg(const char *msg, int fd);
 void close_all_fifo(int fifo1_fd, int fifo2_fd , const char *fifo1, const char *fifo2);
 
-
+void deamon_handle_signal(int sig) {
+    if (sig == SIGTERM) {
+        write(STDOUT_FILENO, "Received SIGTERM\n", 17);
+        _exit(EXIT_SUCCESS);
+    } else if (sig == SIGINT) {
+        write(STDOUT_FILENO, "Received SIGINT\n", 16);
+        _exit(EXIT_SUCCESS);
+    } else if (sig == SIGQUIT) {
+        write(STDOUT_FILENO, "Received SIGQUIT\n", 17);
+        _exit(EXIT_SUCCESS);
+    } 
+}
 
 int daemon_procces( ) {
 
@@ -117,37 +128,51 @@ int daemon_procces( ) {
        
         _exit(EXIT_FAILURE);
     }
-    char message[256];
-    char buffer[256];
-    time_t timestamp = time(NULL);
-    char * timeStr = ctime(&timestamp);
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = deamon_handle_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART; // recommended for system calls
     
-    timeStr[strlen(timeStr) - 1] = '\0'; 
-    strcpy(message, timeStr);
-    strcat(message, ": Daemon process started...\n");
-    write(STDOUT_FILENO, message, strlen(message));
-    memset(message, 0, sizeof(message)); 
-    int count = 0;
+    
+    if (sigaction(SIGUSR1, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    if (sigaction(SIGHUP, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+        perror("sigaction");
+        exit(EXIT_FAILURE);
+    }
+    
+    char buffer[256] = {0};
+
     while (1) {
         sleep(1);
-        timestamp = time(NULL);
-        timeStr = ctime(&timestamp);
-        timeStr[strlen(timeStr) - 1] = '\0'; 
-        strcpy(message, timeStr);
-        count = read(deamon_fifo_fd, buffer, sizeof(buffer));
-        if (strlen(buffer) > 0 && count > 0) {
-            strcat(message, ": ");
-            strcat(message, buffer);
-            strcat(message, "\n");
-            write_msg(message, STDOUT_FILENO);
-            memset(message, 0, sizeof(message)); 
+        // Read from the deamon FIFO
+        ssize_t bytes_read = read(deamon_fifo_fd, buffer, sizeof(buffer) );
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0'; // Null-terminate the string
+            write(STDOUT_FILENO, buffer, strlen(buffer)); // Write to stdout
+            if (strcmp(buffer, "exit") == 0) {
+                break; // Exit the loop if "exit" is received
+            }
+            memset(buffer, 0, sizeof(buffer)); // Clear the buffer
+        } else if (bytes_read == 0) {
+            // No data available to read
+            continue;
+        } else if (bytes_read == -1 && errno != EAGAIN) {
+            perror("Error reading from deamon_pipe");
+            close(deamon_fifo_fd);
+            _exit(EXIT_FAILURE);
         }
-        if (strcmp(buffer, "exit") == 0) {
-            break;
-        }
-       
-    }
 
+        
+    }
     _exit(EXIT_SUCCESS);
 
 }
@@ -174,11 +199,9 @@ int main(int argc, char *argv[]) {
     }
 
     
-    
-    
+
     int arg1 = atoi(argv[1]);
     int arg2 = atoi(argv[2]);
-
 
     
     const char *fifo1 = FIFO1_PATH;
@@ -265,7 +288,7 @@ int main(int argc, char *argv[]) {
     else {
 
         sprintf(message, "Child process 1 ID: %d\n", pid1);
-        write(deamon_fifo_fd, message, strlen(message));
+        write_msg(message, deamon_fifo_fd);
         int pid2 = fork();
         process_count++;
         if (pid2 < 0) {
@@ -284,7 +307,7 @@ int main(int argc, char *argv[]) {
         }
 
         sprintf(message, "Child process 2 ID: %d\n", pid2);
-        write(deamon_fifo_fd, message, strlen(message));
+        write_msg(message, deamon_fifo_fd);
 
         int fifo1_fd = open(fifo1, O_RDWR | O_NONBLOCK);
         if (fifo1_fd == -1) {
@@ -306,9 +329,7 @@ int main(int argc, char *argv[]) {
             close(fifo1_fd);
             return EXIT_FAILURE;
         }
-        write(1, "Parent process wrote to pipe1 successfully.\n", 45);
-
-        
+       
         int status;
         int exited1 = 0, exited2 = 0;
         // Parent process
@@ -319,7 +340,7 @@ int main(int argc, char *argv[]) {
                 if (result == pid1) {
                     if (WIFEXITED(status)) {
                         printf("Child process 1 exited with status %d\n", WEXITSTATUS(status));
-                        write(deamon_fifo_fd, "Child process 1 finished successfully.\n", 40);
+                        
                     } else {
                         printf("Child process 1 terminated abnormally\n");
                     }
@@ -331,7 +352,7 @@ int main(int argc, char *argv[]) {
                 pid_t result = waitpid(pid2, &status, WNOHANG);
                 if (result == pid2) {
                     if (WIFEXITED(status)) {
-                        write(deamon_fifo_fd, "Child process 2 finished successfully.\n", 40);
+                        
                         printf("Child process 2 exited with status %d\n", WEXITSTATUS(status));
                     } else {
                         printf("Child process 2 terminated abnormally\n");
@@ -350,8 +371,9 @@ int main(int argc, char *argv[]) {
        
     }
     
-    write(deamon_fifo_fd, "Parent process finished successfully.\n", 39);
     
+    write_msg("Parent process finished successfully.\n", deamon_fifo_fd);
+    write_msg("exit", deamon_fifo_fd); 
     return 0;
 }
 
@@ -394,7 +416,7 @@ int child1(const char *fifo1) {
         close(fifo1_fd);
         return EXIT_FAILURE;
     }
-    write(deamon_fifo_fd, "Child process 1 is running...\n", 31);
+    write_msg("Child process 1 is running...\n", deamon_fifo_fd);
     int biggest = arg1 > arg2 ? arg1 : arg2;
 
     int fifo2_fd = open(FIFO2_PATH, O_RDWR | O_NONBLOCK);
@@ -445,8 +467,8 @@ int child2(const char *fifo2) {
         close(fifo2_fd);
         return EXIT_FAILURE;
     }
-    write(deamon_fifo_fd, "Child process 2 is running...\n", 31);
-    printf("Child procesas 2 is running...\n");
+    write_msg("Child process 2 is running...\n", deamon_fifo_fd);
+    printf("Child process 2 is running...\n");
     int biggest;
     // Read the biggest number from the FIFO
     if (read(fifo2_fd, &biggest, sizeof(biggest)) == -1) {
@@ -455,14 +477,26 @@ int child2(const char *fifo2) {
         return EXIT_FAILURE;
     }
     printf("The biggest number is: %d\n", biggest);
-    write(deamon_fifo_fd, "Child process 2 finished successfully.\n", 40);
-    write(deamon_fifo_fd, "exit", 5);
+    write_msg("Child process 2 finished successfully.\n", deamon_fifo_fd);
+    
     _exit(EXIT_SUCCESS);
 }
 
-void write_msg(const char *msg, int fd) {
-    if (write(fd, msg, strlen(msg)) == -1) {
-        perror("Error writing to log file");
+void write_msg(const char *msg, int fd ) {
+
+    if (strcmp(msg, "exit") == 0) {
+        write(fd, msg, strlen(msg));
+        return;
+    }
+    // Get the current time and format it
+    char buffer[256];
+    time_t timestamp = time(NULL);
+    char * timeStr = ctime(&timestamp);
+    timeStr[strlen(timeStr) - 1] = '\0'; 
+    snprintf(buffer, sizeof(buffer), "[%s] %s", timeStr, msg);  
+    
+    if (write(fd, buffer, sizeof(buffer)) == -1) {
+        perror("Error writing to deamon_pipe");
     }
 }
 
@@ -483,8 +517,10 @@ void close_all_fifo(int fifo1_fd, int fifo2_fd ,const  char *fifo1,const char *f
 int SIGCHLD_handler(int signum ) {
     int status;
     pid_t pid;
- 
-    
+    if(signum != SIGCHLD) {
+        return -1;
+    }
+
     pid = waitpid(-1, &status, WNOHANG);
     if (pid == -1) {
         perror("waitpid");
