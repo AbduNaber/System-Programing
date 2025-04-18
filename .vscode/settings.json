@@ -11,6 +11,10 @@
         "*.tcc": "c",
         "fstream": "c",
         "wait.h": "c",
-        "signal.h": "c"
+        "signal.h": "c",
+        "typeindex": "c",
+        "typeinfo": "c",
+        "semaphore.h": "c",
+        "pthread.h": "c"
     }
 }
