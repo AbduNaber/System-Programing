@@ -24,25 +24,8 @@ int child2(const char *fifo2);
 int daemon_procces( );
 void write_msg(const char *msg, int fd);
 void close_all_fifo(int fifo1_fd, int fifo2_fd , const char *fifo1, const char *fifo2);
-
-void deamon_handle_signal(int sig) {
-    if (sig == SIGTERM) {
-        write(STDOUT_FILENO, "Received SIGTERM\n", 18);
-        // clean up resources
-        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
-        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
-        _exit(EXIT_SUCCESS);
-    } else if (sig == SIGINT) {
-        write(STDOUT_FILENO, "Received SIGINT\n", 16);
-        // clean up resources
-        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
-        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
-        _exit(EXIT_SUCCESS);
-    } else if (sig == SIGQUIT) {
-        write(STDOUT_FILENO, "Received SIGQUIT\n", 17);
-        _exit(EXIT_SUCCESS);
-    } 
-}
+void deamon_handle_signal(int sig) ;
+int SIGCHLD_handler(int signum);
 
 int daemon_procces( ) {
 
@@ -461,10 +444,22 @@ int child2(const char *fifo2) {
     write_msg("Child process 2 is running...\n", deamon_fifo_fd);
     int biggest;
     // Read the biggest number from the FIFO
-    if (read(fifo2_fd, &biggest, sizeof(biggest)) == -1) {
-        perror("Error reading from pipe2");
-        close(fifo2_fd);
-        return EXIT_FAILURE;
+    while (1) {
+        ssize_t bytes_read = read(fifo2_fd, &biggest, sizeof(biggest));
+        if (bytes_read == -1) {
+            if (errno == EAGAIN) {
+                // No data available to read
+                continue;
+            } else {
+                perror("Error reading from pipe2");
+                close(fifo2_fd);
+                return EXIT_FAILURE;
+            }
+        } else if (bytes_read == 0) {
+            // End of file reached
+            break;
+        }
+       break;
     }
     printf("The biggest number is: %d\n", biggest);
     write_msg("Child process 2 finished successfully.\n", deamon_fifo_fd);
@@ -502,6 +497,24 @@ void close_all_fifo(int fifo1_fd, int fifo2_fd ,const  char *fifo1,const char *f
     }
     unlink(fifo1);
     unlink(fifo2);
+}
+void deamon_handle_signal(int sig) {
+    if (sig == SIGUSR1) {
+        write(STDOUT_FILENO, "Received SIGUSR1\n", 18);
+        // clean up resources
+        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
+        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
+        _exit(EXIT_SUCCESS);
+    } else if (sig == SIGTERM) {
+        write(STDOUT_FILENO, "Received SIGTERM\n", 18);
+        // clean up resources
+        close_all_fifo(-1, -1, FIFO1_PATH, FIFO2_PATH);
+        write_msg("Daemon process terminated.\n", STDOUT_FILENO);
+        _exit(EXIT_SUCCESS);
+    } else if (sig == SIGHUP) {
+        write(STDOUT_FILENO, "Received SIGHUB\n", 17);
+        _exit(EXIT_SUCCESS);
+    } 
 }
 
 int SIGCHLD_handler(int signum ) {
