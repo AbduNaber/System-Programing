@@ -1,12 +1,9 @@
 
 #include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h> /* For mode constants */
-#include <fcntl.h> /* For O_* constants */ 
+
 #include <errno.h>
 #include <string.h>          // For memset
 #include <semaphore.h>
-#include <sys/wait.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
