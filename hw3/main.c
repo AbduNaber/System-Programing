@@ -179,7 +179,7 @@ void* engineer(void* arg) {
 int main(){
 
     srand(time(NULL));
-    int satellite_number = 9; //rand() % 10 + 1;
+    int satellite_number = rand() % 10 + 1;
     printf("Number of satellites: %d\n", satellite_number);
     int MAX_PRIORITY = satellite_number;
     
@@ -218,7 +218,6 @@ int main(){
         pthread_create(&satellites[i].threadID, NULL, satellite, &satellites[i].satelliteID);
     }
 
-    sleep(1); 
     // Create engineers
     int engineer_number = 3;
     Engineer engineers[engineer_number];
