@@ -43,7 +43,7 @@ static int availableEngineers = 0;
 PriorityQueue requestQueue;
 
 int handledId = 0;
-pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; 
+pthread_mutex_t engineerMutex = PTHREAD_MUTEX_INITIALIZER; 
 
 
 void initQueue(PriorityQueue *pq) {
@@ -144,7 +144,7 @@ void* engineer(void* arg) {
     int engineerID = *(int*)arg;
 
     while (1) {
-        pthread_mutex_lock(&lock);
+        pthread_mutex_lock(&engineerMutex);
 
         Satellite *target = NULL;
 
@@ -157,12 +157,12 @@ void* engineer(void* arg) {
         }
 
         if (!target) {
-            pthread_mutex_unlock(&lock);
+            pthread_mutex_unlock(&engineerMutex);
             break; 
         }
 
         target->isHandled = 1;
-        pthread_mutex_unlock(&lock);
+        pthread_mutex_unlock(&engineerMutex);
 
         printf("[ENGINEER] Engineer %d handling Satellite %d (Priority %d)\n",
                engineerID, target->satelliteID, target->priority);
@@ -201,7 +201,7 @@ int main(){
         priorities[j] = tmp;
     }
 
-    pthread_mutex_init(&lock, NULL);
+    pthread_mutex_init(&engineerMutex, NULL);
 
     initQueue(&requestQueue);
 

@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -pthread 
 
 # Source files and target
 SRC = main.c
@@ -14,7 +14,7 @@ run: $(TARGET)
 
 # Build target
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET)
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) 
 
 # Clean up build files
 clean:
