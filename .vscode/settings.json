@@ -16,6 +16,9 @@
         "typeinfo": "c",
         "semaphore.h": "c",
         "pthread.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "array": "c",
+        "string": "c",
+        "string_view": "c"
     }
 }
