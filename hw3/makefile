@@ -9,7 +9,8 @@ TARGET = hw3
 # Default target
 all: $(TARGET)
 
-
+run: $(TARGET)
+	./$(TARGET)
 
 # Build target
 $(TARGET): $(SRC)

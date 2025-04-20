@@ -20,6 +20,7 @@
 typedef struct  {
     int satelliteID;
     int priority;
+    int isTimedOut;
     pthread_t threadID;
 } Satellite;
 
@@ -33,12 +34,16 @@ typedef struct {
     int size;
 } PriorityQueue;
 
-static int availableEngineers = 0;
-static PriorityQueue requestQueue;
-static int requestID = 0;
+Satellite* getSatellite(int satelliteID) ;
 
+static int availableEngineers = 0;
+PriorityQueue requestQueue;
+static int request = 0;
+int handledId = 0;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER; 
-pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
+sem_t newRequest;
+sem_t requestHandled;
 
 void initQueue(PriorityQueue *pq) {
     pq->size = 0;
@@ -50,23 +55,27 @@ void swap(Satellite *a, Satellite *b) {
     *b = temp;
 }
 
-void insert(PriorityQueue *pq, Satellite s) {
+Satellite* insert(PriorityQueue *pq, Satellite s) {
     if (pq->size >= MAX_SATELLITE) {
         printf("Queue full!\n");
-        return;
+        return NULL;
     }
     int i = pq->size++;
     pq->data[i] = s;
+
     // Heapify up
     while (i > 0 && pq->data[i].priority > pq->data[(i - 1) / 2].priority) {
         swap(&pq->data[i], &pq->data[(i - 1) / 2]);
         i = (i - 1) / 2;
     }
+
+    return &pq->data[i];  // Return pointer to final position
 }
+
 
 Satellite extractMax(PriorityQueue *pq) {
     if (pq->size <= 0) {
-        Satellite empty = {-1, -1, 0};
+        Satellite empty = {-1, -1, 0, 0};
         return empty;
     }
 
@@ -94,70 +103,102 @@ Satellite extractMax(PriorityQueue *pq) {
     return max;
 }
 
-int satellite(void* satelliteID_ptr) {
+void* satellite(void* arg) {
+    
+
+    Satellite* s = (Satellite*)arg;
+    int satelliteID = s->satelliteID;
+
     struct timespec ts;
-    int rc;
-    int satelliteID = *((int*)satelliteID_ptr);
-    // Get the current time
-    clock_gettime(0, &ts);
+    clock_gettime(CLOCK_REALTIME, &ts);
     ts.tv_sec += 5;
-    
+
+    printf("[SATELLITE] Satellite %d requesting (Priority %d)\n", satelliteID, s->priority);
+    sem_post(&newRequest);
+
+    if (sem_timedwait(&requestHandled, &ts) == -1) {
+        if (errno == ETIMEDOUT) {
+            printf("[SATELLITE] Satellite %d timed out\n", satelliteID);
+        } else {
+            perror("sem_timedwait");
+        }
+        s->isTimedOut = 1;
+        pthread_exit(NULL);
+    }
+
     pthread_mutex_lock(&lock);
-    while (availableEngineers == 0) {
-        rc = pthread_cond_timedwait(&cond, &lock, &ts);
-        if (rc == ETIMEDOUT) {
-            printf("Satellite %d timout 5\n", satelliteID);
-            pthread_mutex_unlock(&lock);
-            pthread_exit(NULL);
-            }
-    }
-
-
-
-    pthread_mutex_unlock(&lock);
-    return 0;
-}
-
-int findSatelliteIDByThreadID(pthread_t threadID) {
-    for (int i = 0; i < requestQueue.size; i++) {
-        if (pthread_equal(requestQueue.data[i].threadID, threadID)) {
-            return requestQueue.data[i].satelliteID;
-        }
-    }
-    return -1;
-}
-
-int engineer(void* engineerID_ptr){
-    int engineerID = *((int*)engineerID_ptr);
-    while(1){
-        
-        Satellite s = extractMax(&requestQueue);
-        if(s.satelliteID == -1) {
-            printf("No satellite to assist\n");
-            pthread_mutex_unlock(&lock);
-            pthread_exit(NULL);
-        }
-        printf("[ENGINEER %d] handling satellite %d (priority %d)\n", engineerID,s.satelliteID,s.priority);
-        pthread_mutex_lock(&lock);
-        availableEngineers--;
-        sleep(4); // Simulate time taken to assist the satellite
+    if (handledId == satelliteID) {
         pthread_mutex_unlock(&lock);
-        availableEngineers++;
-        printf("[ENGINEER %d] finished satellite %d\n", engineerID, s.satelliteID);
-        
-        
+        pthread_exit(NULL);
     }
-    
-    
+    pthread_mutex_unlock(&lock);
+    pthread_exit(NULL);
 }
 
 
+Satellite* getSatellite(int satelliteID) {
+    for (int i = 0; i < requestQueue.size; i++) {
+        if (requestQueue.data[i].satelliteID == satelliteID) {
+            return &requestQueue.data[i];
+        }
+    }
+    return NULL;
+}
+
+void* engineer(void* engineerID_ptr) {
+    int engineerID = *(int*)engineerID_ptr;
+    
+    while (1) {
+        sem_wait(&newRequest);
+
+        Satellite s;
+
+        pthread_mutex_lock(&lock);
+        if (requestQueue.size == 0) {
+            pthread_mutex_unlock(&lock);
+            break;
+        }
+
+        availableEngineers--;
+
+        s = extractMax(&requestQueue);
+
+        
+        if (s.isTimedOut) {
+            pthread_mutex_unlock(&lock);
+            continue;
+        }
+
+        pthread_mutex_unlock(&lock);  
+
+       
+        printf("[ENGINEER] Engineer %d handling Satellite %d (Priority %d)\n",
+               engineerID, s.satelliteID, s.priority);
+
+        sleep(7);  
+
+        pthread_mutex_lock(&lock);
+        handledId = s.satelliteID;
+        sem_post(&requestHandled);
+        availableEngineers++;
+        pthread_mutex_unlock(&lock);
+
+        printf("[ENGINEER %d] finished Satellite %d\n", engineerID, s.satelliteID);
+
+        sleep(1);  // optional rest between tasks
+    }
+    pthread_exit(NULL);
+    return NULL;
+}
+    
 int main(){
 
     srand(time(NULL));
     int satellite_number = rand() % 10 + 1;
-    requestQueue.size = satellite_number;
+    printf("Number of satellites: %d\n", satellite_number);
     int MAX_PRIORITY = satellite_number;
+    
+    Satellite satellites[satellite_number];
 
     // Generate unique priorities
     int priorities[MAX_PRIORITY];
@@ -173,18 +214,30 @@ int main(){
     }
 
     pthread_mutex_init(&lock, NULL);
-    pthread_cond_init(&cond, NULL);
+    sem_init(&newRequest, 0, 0);
+    sem_init(&requestHandled, 0, 0);
     initQueue(&requestQueue);
 
-    // Create satellites
     for (int i = 0; i < satellite_number; i++) {
-        Satellite s;
-        s.satelliteID = i + 1;
-        s.priority = priorities[i]; // Random priority between 1 and 10
-        pthread_create(&s.threadID, NULL, (void *)satellite, &s.satelliteID);
-        insert(&requestQueue, s);
+        satellites[i].satelliteID = i + 1;
+        satellites[i].priority = priorities[i];
+        satellites[i].isTimedOut = 0;
+      
+        insert(&requestQueue, satellites[i]);  // copy into heap
     }
 
+
+    for (int i = 0; i < satellite_number; i++) {
+        
+        pthread_create(&satellites[i].threadID, NULL, satellite, &satellites[i].satelliteID);
+    }
+
+
+
+    
+    
+
+    sleep(1); 
     // Create engineers
     int engineer_number = 3;
     Engineer engineers[engineer_number];
@@ -193,15 +246,17 @@ int main(){
         pthread_create(&engineers[i].threadID, NULL, (void *)engineer, &engineers[i].engineerID);
         availableEngineers++;
     }
-    
+
 
     // Wait for all engineers to finish
     for (int i = 0; i < engineer_number; i++) {
         pthread_join(engineers[i].threadID, NULL);
+        printf("[ENGINEER] Engineer %d finished\n", engineers[i].engineerID);
     }
     // Wait for all satellites to finish
     for (int i = 0; i < satellite_number; i++) {
-        pthread_join(requestQueue.data[i].threadID, NULL);
+        pthread_join(satellites[i].threadID, NULL);
+        printf("[SATELLITE] Satellite %d finished\n", satellites[i].satelliteID);
     }
     
 
