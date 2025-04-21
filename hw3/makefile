@@ -1,7 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g -pthread 
-
+CFLAGS = -Wall -Wextra -g -pthread
 # Source files and target
 SRC = main.c
 TARGET = hw3

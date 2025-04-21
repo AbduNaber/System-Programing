@@ -1,0 +1,18 @@
+[SATELLITE] Satellite 1 requesting (Priority 2)
+[SATELLITE] Satellite 2 requesting (Priority 4)
+[SATELLITE] Satellite 3 requesting (Priority 3)
+[SATELLITE] Satellite 4 requesting (Priority 1)
+[SATELLITE] Satellite 5 requesting (Priority 5)
+[ENGINEER] Engineer 1 handling Satellite 5 (Priority 5)
+[ENGINEER] Engineer 2 handling Satellite 2 (Priority 4)
+[ENGINEER] Engineer 3 handling Satellite 3 (Priority 3)
+[ENGINEER 1] finished Satellite 5
+[ENGINEER] Engineer 1 handling Satellite 4 (Priority 1)
+[ENGINEER 2] finished Satellite 2
+[ENGINEER] Engineer 2 handling Satellite 1 (Priority 2)
+[ENGINEER 3] finished Satellite 3
+[ENGINEER 3] finished
+[ENGINEER 2] finished Satellite 1
+[ENGINEER 2] finished
+[ENGINEER 1] finished Satellite 4
+[ENGINEER 1] finished
