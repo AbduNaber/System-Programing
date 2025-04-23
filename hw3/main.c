@@ -155,7 +155,7 @@ void* engineer(void* arg) {
 
 int main() {
     srand(time(NULL));
-    int satellite_number = 5;
+    int satellite_number = rand() % 10;
     int MAX_PRIORITY = satellite_number;
     Satellite satellites[satellite_number];
 
