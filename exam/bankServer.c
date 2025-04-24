@@ -9,10 +9,19 @@
 #include <signal.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "bankDefination.h"
 
 
+void write_error(const char* msg);
+void write_output(const char* msg);
+int load_log(int fd,client_t *clients);
+int parse_clients_log(int fd, client_t *clients, int *client_count_out) ;
+int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, unsigned int id);
+unsigned int extract_client_number(const char *id_str);
+void print_clients(client_t * clients, int client_count);
+void clear_heap(client_t *clients, int client_count) ;
 
 void write_error(const char* msg) {
     write(STDERR_FILENO, msg, strlen(msg));
@@ -43,9 +52,8 @@ int main(int argc, char *argv[])
     char buffer[BUFSIZ];
     char time_buf[100];
 
-    transaction_t *transactions = malloc(sizeof(transaction_t) * MAX_TRANSACTIONS);
-    client_t *clients = malloc(sizeof(client_t) * MAX_CLIENTS);
-
+    client_t *clients = malloc(sizeof(client_t) * INITIAL_CLIENTS);
+    int client_count = 0;
     int log_fd = open(log_file_name, O_RDWR, 0644);
     if(log_fd == -1){
         if(errno == ENOENT){
@@ -66,99 +74,118 @@ int main(int argc, char *argv[])
     else{
         write_output("Previous logs found!\n");
         write_output("Loading logs...\n");
-        if(load_logs() == -1){
+        if(parse_clients_log(log_fd,clients,&client_count) == -1){
             write(STDERR_FILENO, "Error loading logs\n", 20); 
             return 1;
         }
     }
+    print_clients(clients, client_count);
     write_output("Waiting for clients @");
     write_output(server_fifo_name);
     write_output("...\n");
 
-    free(transactions);
-    free(clients);
-    close(log_fd);
-    unlink(server_fifo_name);
+
+    // close(log_fd);
+    // unlink(server_fifo_name);
+    clear_heap(clients, client_count);
 
     write_output(bank_name);
     write_output(" says “Bye...\n");
     return 0;
 }
 
-int load_log(int fd,transaction_t *transactions){
-    int count = parse_log_fd(fd, transactions, MAX_TRANSACTIONS);
-    write_output("Previous log loaded\n");
-    return count;
+int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, unsigned int id) {
+    for (int i = 0; i < *client_count; i++) {
+        if ((*clients)[i].client_id == id) {
+            return i;
+        }
+    }
+
+    // Need to create a new one
+    if (*client_count >= *client_capacity) {
+        int new_cap = (*client_capacity) * 2;
+        client_t *new_clients = realloc(*clients, sizeof(client_t) * new_cap);
+        if (!new_clients) return -1;
+        *clients = new_clients;
+        *client_capacity = new_cap;
+    }
+
+    client_t *c = &(*clients)[*client_count];
+    c->client_id = id;
+    c->credits = 0;
+    c->transactions = malloc(sizeof(transaction_t) * MAX_TX_PER_CLIENT);
+    if (!c->transactions) return -1;
+    (*client_count)++;
+    return (*client_count - 1);
 }
 
+int parse_clients_log(int fd, client_t *clients, int *client_count_out) {
+    int client_capacity = INITIAL_CLIENTS;
+    int client_count = 0;
+    
+    if (!clients) return -1;
 
-
-int parse_log_fd(int fd, transaction_t *transactions, int max_transactions) {
     char buf[1];
     char line[MAX_LINE];
     int line_len = 0;
-    int tx_count = 0;
 
     while (read(fd, buf, 1) == 1) {
         if (buf[0] == '\n' || line_len >= MAX_LINE - 1) {
             line[line_len] = '\0';
             line_len = 0;
 
-            // Skip comment lines
-            if (line[0] == '#' || line[0] == '\0') continue;
+            
+            if (line[0] == '#') {
+                if (line[1] == '#' || strstr(line, "Log file") || strstr(line, "end of log")) continue;
+                
+                memmove(line, line + 1, strlen(line));  
+            }
+            if (line[0] == '\0') continue;
 
-            // Parse line
             char *saveptr;
             char *token = strtok_r(line, " ", &saveptr);
             if (!token) continue;
 
-            char client_id[100];
-            strncpy(client_id, token, sizeof(client_id));
-            client_id[sizeof(client_id) - 1] = '\0';
+            unsigned int client_id = extract_client_number(token);
+            int client_index = get_or_create_client(&clients, &client_count, &client_capacity, client_id);
+            if (client_index == -1) return -1;
+
+            client_t *client = &clients[client_index];
+            int tx_count = 0;
 
             while ((token = strtok_r(NULL, " ", &saveptr))) {
                 if (strcmp(token, "0") == 0) break;
 
                 transaction_t tx;
-                strncpy(tx.client_id, client_id, sizeof(tx.client_id));
-                tx.client_id[sizeof(tx.client_id) - 1] = '\0';
-
-                if (strcmp(token, "D") == 0) {
-                    tx.op = DEPOSIT;
-                } else if (strcmp(token, "W") == 0) {
-                    tx.op = WITHDRAW;
-                } else {
-                    continue;
-                }
+                if (strcmp(token, "D") == 0) tx.op = DEPOSIT;
+                else if (strcmp(token, "W") == 0) tx.op = WITHDRAW;
+                else continue;
 
                 token = strtok_r(NULL, " ", &saveptr);
                 if (!token) break;
-
                 tx.amount = atoi(token);
 
-                transactions[tx_count++] = tx;
-                if (tx_count >= max_transactions) return tx_count;
-            }
+                if (tx_count >= MAX_TX_PER_CLIENT) {
+                    transaction_t *new_tx = realloc(client->transactions, sizeof(transaction_t) * (tx_count + MAX_TX_PER_CLIENT));
+                    if (!new_tx) return -1;
+                    client->transactions = new_tx;
+                }
 
+                client->transactions[tx_count++] = tx;
+
+                if (tx.op == DEPOSIT)
+                    client->credits += tx.amount;
+                else
+                    client->credits -= tx.amount;
+            }
         } else {
             line[line_len++] = buf[0];
         }
-        // Check if we need to reallocate memory for transactions
-        if(tx_count >= max_transactions) {
-            transactions = realloc(transactions, sizeof(transaction_t) * (sizeof(transactions) + MAX_TRANSACTIONS));
-            if(transactions == NULL) {
-                write(STDERR_FILENO, "Error reallocating memory for transactions\n", 44);
-                return -1;
-            }
-        };
     }
 
-    return tx_count;
-}
 
-
-int load_transactions(transaction_t *transactions, client_t * clients) {
-    
+    *client_count_out = client_count;
+    return 0;
 }
 
 void get_time(char * time_buf){
@@ -171,7 +198,28 @@ void get_time(char * time_buf){
 
 }
 
+void print_clients(client_t * clients, int client_count){
+    for(int i = 0; i < client_count; i++) {
+        write(STDOUT_FILENO, "Client ID: ", 11);
+        char id_buf[20];
+        snprintf(id_buf, sizeof(id_buf), "%u\n", clients[i].client_id);
+        write(STDOUT_FILENO, id_buf, strlen(id_buf));
+        write(STDOUT_FILENO, "Credits: ", 9);
+        char credits_buf[20];
+        snprintf(credits_buf, sizeof(credits_buf), "%d\n", clients[i].credits);
+        write(STDOUT_FILENO, credits_buf, strlen(credits_buf));
+    }
+}
 
- 
+unsigned int extract_client_number(const char *id_str) {
+    const char *digit_ptr = id_str;
+    while (*digit_ptr && (*digit_ptr < '0' || *digit_ptr > '9')) digit_ptr++;
+    return (unsigned int)atoi(digit_ptr);
+}
 
-
+void clear_heap(client_t *clients, int client_count) {
+    for (int i = 0; i < client_count; i++) {
+        free(clients[i].transactions);
+    }
+    free(clients);
+}

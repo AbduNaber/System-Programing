@@ -7,7 +7,7 @@ typedef enum{
 } operation;
 
 typedef struct{
-    char client_id[100];
+    
     operation op;
     int amount;
 } transaction_t;
@@ -15,12 +15,15 @@ typedef struct{
 typedef struct{
     unsigned int client_id;
     int credits;
+    transaction_t *transactions;
 } client_t;
 
 
-#define BUFSIZ 1024
+//#define BUFSIZ 1024
 #define MAX_LINE 256
-#define MAX_TRANSACTIONS 1024
-#define MAX_CLIENTS 1024
+#define MAX_TX_PER_CLIENT 1024
+#define INITIAL_CLIENTS 1024
 
+int transaction_counter =  0 ;
+int client_counter = 0;
 #endif
