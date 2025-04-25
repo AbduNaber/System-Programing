@@ -22,6 +22,7 @@
         "string_view": "c",
         "stat.h": "c",
         "types.h": "c",
-        "bankdefination.h": "c"
+        "bankdefination.h": "c",
+        "stdarg.h": "c"
     }
 }

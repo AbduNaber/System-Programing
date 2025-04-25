@@ -10,40 +10,73 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 #include "bankDefination.h"
 
 
-void write_error(const char* msg);
-void write_output(const char* msg);
-int load_log(int fd,client_t *clients);
+
+
 int parse_clients_log(int fd, client_t *clients, int *client_count_out) ;
-int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, unsigned int id);
-unsigned int extract_client_number(const char *id_str);
+int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) ;
 void print_clients(client_t * clients, int client_count);
 void clear_heap(client_t *clients, int client_count) ;
 
-void write_error(const char* msg) {
-    write(STDERR_FILENO, msg, strlen(msg));
+
+void write_error(int count, ...) {
+    va_list args;
+    va_start(args, count);
+
+    for (int i = 0; i < count; i++) {
+        const char* msg = va_arg(args, const char*);
+        write(STDERR_FILENO, msg, strlen(msg));
+    }
+
+    va_end(args);
 }
 
-void write_output(const char* msg) {
-    write(STDOUT_FILENO, msg, strlen(msg));
+void write_output(int count, ...) {
+    va_list args;
+    va_start(args, count);
+
+    for (int i = 0; i < count; i++) {
+        const char* msg = va_arg(args, const char*);
+        write(STDOUT_FILENO, msg, strlen(msg));
+    }
+
+    va_end(args);
 }
+
 
 int main(int argc, char *argv[])
 {
     if(argc != 3){
-        write_error("Usage: ");
-        write(STDERR_FILENO, argv[0], strlen(argv[0])); 
-        write_error(" <bank_name> <server_fifo_name>\n");
+        write_error(3, "Usage: ", argv[0], " <bank_name> <server_fifo_name>\n");
         return 1;
     }
     char *bank_name = argv[1];
     char *server_fifo_name = argv[2];
 
-    write(STDOUT_FILENO, bank_name, strlen(bank_name));
-    write_output(" is active…\n");
+    if (mkfifo(server_fifo_name, 0666) == -1) {
+        if (errno == EEXIST) {
+            
+        } else {
+            write(STDERR_FILENO, "Error creating FIFO\n", 21);
+            return 1;
+        }
+       
+    }
+
+    if(mkfifo(CLIENT_FIFO_NAME,0666)== -1){
+        if (errno == EEXIST) {
+            
+        } else {
+            write(STDERR_FILENO, "Error creating FIFO\n", 21);
+            return 1;
+        }
+    }
+
+    write_output(2,bank_name, " is waiting for clients...\n");
 
     char log_file_name[256] = "";
     strcat(log_file_name, bank_name);
@@ -57,14 +90,12 @@ int main(int argc, char *argv[])
     int log_fd = open(log_file_name, O_RDWR, 0644);
     if(log_fd == -1){
         if(errno == ENOENT){
-            write_output("No previous logs.. Creating the bank database\n");
+            write_output(1,"No previous logs.. Creating the bank database\n");
             log_fd = open(log_file_name, O_RDWR | O_CREAT, 0644);
             if(log_fd == -1){
                 write(STDERR_FILENO, "Error creating log file\n", 24); 
                 return 1;
             }
-            
-            
         }
         else{
             write(STDERR_FILENO, "Error opening log file\n", 24); 
@@ -72,35 +103,68 @@ int main(int argc, char *argv[])
         }
     }
     else{
-        write_output("Previous logs found!\n");
-        write_output("Loading logs...\n");
+        write_output(2, "Previous logs found!\n","Loading logs...\n");
         if(parse_clients_log(log_fd,clients,&client_count) == -1){
             write(STDERR_FILENO, "Error loading logs\n", 20); 
             return 1;
         }
     }
-    print_clients(clients, client_count);
-    write_output("Waiting for clients @");
-    write_output(server_fifo_name);
-    write_output("...\n");
+   
+   
 
 
-    // close(log_fd);
-    // unlink(server_fifo_name);
+    write_output(3 ,"Waiting for clients @", server_fifo_name, "...\n");
+
+    int server_fifo_fd = open(server_fifo_name, O_RDONLY);
+    if (server_fifo_fd == -1) {
+        if(errno == ENOENT) {
+            write(STDERR_FILENO, "Server FIFO not found\n", 23);
+        } else {
+            write(STDERR_FILENO, "Error opening server FIFO\n", 27);
+        }
+        return 1;
+    }
+    
+    int client_fifo_fd = open(CLIENT_FIFO_NAME, O_WRONLY);
+    if (client_fifo_fd == -1) {
+        if(errno == ENOENT) {
+            write(STDERR_FILENO, "client FIFO not found\n", 23);
+        } else {
+            write(STDERR_FILENO, "Error opening server FIFO\n", 27);
+        }
+        return 1;
+    }
+    char msg[BUFSIZ];
+    strcpy(msg,bank_name);
+    write(client_fifo_fd,msg,sizeof(msg));
+
+    client_info_t client_info;
+    read(server_fifo_fd, &client_info, sizeof(client_info_t));
+    if (client_info.client_counter == -1) {
+        write(STDERR_FILENO, "Error reading client info\n", 26);
+        return 1;
+    }
+
+    char client_info_str[256]= "";
+    snprintf(client_info_str, sizeof(client_info_str), "%dClientX...", client_info.pid);
+    write_output(2, client_info_str, "\n");
+    close(log_fd);
+    unlink(server_fifo_name);
+    unlink(CLIENT_FIFO_NAME);
+
     clear_heap(clients, client_count);
 
-    write_output(bank_name);
-    write_output(" says “Bye...\n");
+    write_output(2, bank_name, " says Bye...\n");
     return 0;
 }
 
-int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, unsigned int id) {
+int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) {
+    // Check if the client already exists
     for (int i = 0; i < *client_count; i++) {
-        if ((*clients)[i].client_id == id) {
-            return i;
+        if (strcmp((*clients)[i].bank_id, id) == 0) {
+            return i; // Client already exists
         }
     }
-
     // Need to create a new one
     if (*client_count >= *client_capacity) {
         int new_cap = (*client_capacity) * 2;
@@ -111,7 +175,7 @@ int get_or_create_client(client_t **clients, int *client_count, int *client_capa
     }
 
     client_t *c = &(*clients)[*client_count];
-    c->client_id = id;
+    strcpy(c->bank_id, id);
     c->credits = 0;
     c->transactions = malloc(sizeof(transaction_t) * MAX_TX_PER_CLIENT);
     if (!c->transactions) return -1;
@@ -146,17 +210,20 @@ int parse_clients_log(int fd, client_t *clients, int *client_count_out) {
             char *token = strtok_r(line, " ", &saveptr);
             if (!token) continue;
 
-            unsigned int client_id = extract_client_number(token);
+            char *client_id = token;
             int client_index = get_or_create_client(&clients, &client_count, &client_capacity, client_id);
             if (client_index == -1) return -1;
 
             client_t *client = &clients[client_index];
+            strcpy(client->bank_id, client_id);
             int tx_count = 0;
 
             while ((token = strtok_r(NULL, " ", &saveptr))) {
+
                 if (strcmp(token, "0") == 0) break;
 
                 transaction_t tx;
+                strcpy(tx.bank_id, client->bank_id);
                 if (strcmp(token, "D") == 0) tx.op = DEPOSIT;
                 else if (strcmp(token, "W") == 0) tx.op = WITHDRAW;
                 else continue;
@@ -202,7 +269,7 @@ void print_clients(client_t * clients, int client_count){
     for(int i = 0; i < client_count; i++) {
         write(STDOUT_FILENO, "Client ID: ", 11);
         char id_buf[20];
-        snprintf(id_buf, sizeof(id_buf), "%u\n", clients[i].client_id);
+        snprintf(id_buf, sizeof(id_buf), "%s\n", clients[i].bank_id);
         write(STDOUT_FILENO, id_buf, strlen(id_buf));
         write(STDOUT_FILENO, "Credits: ", 9);
         char credits_buf[20];
@@ -211,15 +278,33 @@ void print_clients(client_t * clients, int client_count){
     }
 }
 
-unsigned int extract_client_number(const char *id_str) {
-    const char *digit_ptr = id_str;
-    while (*digit_ptr && (*digit_ptr < '0' || *digit_ptr > '9')) digit_ptr++;
-    return (unsigned int)atoi(digit_ptr);
-}
+
 
 void clear_heap(client_t *clients, int client_count) {
     for (int i = 0; i < client_count; i++) {
         free(clients[i].transactions);
     }
     free(clients);
+}
+
+
+
+void intToStr(int N, char *str) {
+    int i = 0;
+    int sign = N;
+    if (N < 0)
+        N = -N;
+    while (N > 0) {
+        str[i++] = N % 10 + '0';
+      	N /= 10;
+    } 
+    if (sign < 0) {
+        str[i++] = '-';
+    }
+    str[i] = '\0';
+    for (int j = 0, k = i - 1; j < k; j++, k--) {
+        char temp = str[j];
+        str[j] = str[k];
+        str[k] = temp;
+    }
 }
