@@ -11,17 +11,37 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
-
+#include <sys/mman.h>  
+#include <sys/wait.h>   
 #include "bankDefination.h"
 
 
 
+#define TELLER_SHM_NAME "/teller_shm"
 
 int parse_clients_log(int fd, client_t *clients, int *client_count_out) ;
 int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) ;
 void print_clients(client_t * clients, int client_count);
 void clear_heap(client_t *clients, int client_count) ;
+pid_t Teller (void* func, void* arg_func);
+int find_client_index(client_t *clients, int client_count, const char *id);
 
+pid_t Teller (void* func, void* arg_func){
+    pid_t teller_pid = fork();
+    if(teller_pid == 0){
+        // Child process
+        if(func != NULL && arg_func != NULL){
+            ((void (*)(void*))func)(arg_func);
+        }
+        exit(0);
+    }
+    return teller_pid;
+}
+
+
+int waitTeller(pid_t pid, int *status) {
+    return waitpid(pid, status, 0);
+}
 
 void write_error(int count, ...) {
     va_list args;
@@ -75,15 +95,31 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+    int shm_fd = shm_open(TELLER_SHM_NAME, O_CREAT | O_RDWR, 0666);
+    if (shm_fd == -1) {
+        
+        if(errno == EEXIST) {
+           write(STDERR_FILENO, "Shared memory for tellers already exists continue..\n", 53);
+        } else {
+            write(STDERR_FILENO, "Error creating shared memory\n", 30);
+            return 1;
+        }
+    }
+
+    ftruncate(shm_fd, sizeof(teller_t));
+    teller_t *shared_teller = mmap(0, sizeof(teller_t), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (shared_teller == MAP_FAILED) {
+        write(STDERR_FILENO, "Error mapping shared memory\n", 29);
+        return 1;
+    }
+    shared_teller->teller_pid =-1;
+    shared_teller->transaction = (transaction_t){0};
 
     write_output(2,bank_name, " is waiting for clients...\n");
 
     char log_file_name[256] = "";
     strcat(log_file_name, bank_name);
     strcat(log_file_name, ".bankLog");
-
-    char buffer[BUFSIZ];
-    char time_buf[100];
 
     client_t *clients = malloc(sizeof(client_t) * INITIAL_CLIENTS);
     int client_count = 0;
@@ -146,8 +182,33 @@ int main(int argc, char *argv[])
     }
 
     char client_info_str[256]= "";
+    
     snprintf(client_info_str, sizeof(client_info_str), "%dClientX...", client_info.pid);
     write_output(2, client_info_str, "\n");
+    for (int i = 0; i < client_info.client_counter; i++) {
+
+        if(find_client_index(clients, client_count, client_info.clients_name[i]) == -1) {
+            write_output(3, "New client: ", client_info.clients_name[i], "\n");
+        }
+        else {
+            write_output(3, "Existing client: ", client_info.clients_name[i], "\n");
+        }
+        
+    }
+    pid_t tellers_pid[MAX_TX_PER_CLIENT];
+    int teller_count = 0;
+    // create tellers for each client
+    for (int i = 0; i < client_info.client_counter; i++) {
+       tellers_pid[teller_count] = Teller(NULL, NULL);
+        if (tellers_pid[teller_count++] == -1) {
+            write(STDERR_FILENO, "Error creating teller\n", 23);
+            return 1;
+        }
+        
+        
+    }
+
+
     close(log_fd);
     unlink(server_fifo_name);
     unlink(CLIENT_FIFO_NAME);
@@ -267,14 +328,17 @@ void get_time(char * time_buf){
 
 void print_clients(client_t * clients, int client_count){
     for(int i = 0; i < client_count; i++) {
-        write(STDOUT_FILENO, "Client ID: ", 11);
-        char id_buf[20];
-        snprintf(id_buf, sizeof(id_buf), "%s\n", clients[i].bank_id);
-        write(STDOUT_FILENO, id_buf, strlen(id_buf));
-        write(STDOUT_FILENO, "Credits: ", 9);
-        char credits_buf[20];
-        snprintf(credits_buf, sizeof(credits_buf), "%d\n", clients[i].credits);
-        write(STDOUT_FILENO, credits_buf, strlen(credits_buf));
+        printf("Client ID: %s\n", clients[i].bank_id);
+        printf("Credits: %d\n", clients[i].credits);
+        printf("Transactions:\n");
+        for(int j = 0; j < MAX_TX_PER_CLIENT; j++) {
+            if(clients[i].transactions[j].op == DEPOSIT) {
+                printf("Deposit: %d\n", clients[i].transactions[j].amount);
+            } else if(clients[i].transactions[j].op == WITHDRAW) {
+                printf("Withdraw: %d\n", clients[i].transactions[j].amount);
+            }
+        }
+        printf("------------------------\n");
     }
 }
 
@@ -285,6 +349,16 @@ void clear_heap(client_t *clients, int client_count) {
         free(clients[i].transactions);
     }
     free(clients);
+}
+
+
+int find_client_index(client_t *clients, int client_count, const char *id) {
+    for (int i = 0; i < client_count; i++) {
+        if (strcmp(clients[i].bank_id, id) == 0) {
+            return i;
+        }
+    }
+    return -1; // Not found
 }
 
 

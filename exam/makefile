@@ -34,12 +34,15 @@ server:
 client:
 	./$(CLIENT_TARGET) $(RUN_ARG)
 
+
+	
 # Clean up build files
 clean:
 	rm -f $(CLIENT_TARGET) $(SERVER_TARGET)
 
 vd:
-	valgrind --leak-check=full --track-origins=yes ./$(TARGET) $(RUN_ARG)
+	valgrind --leak-check=full --track-origins=yes ./$(CLIENT_TARGET) $(CLIENT_ARG) & \	
+	./$(SERVER_TARGET) $(SERVER_ARG)
 
 # Phony targets
 .PHONY: all clean

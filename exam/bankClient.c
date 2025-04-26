@@ -28,7 +28,6 @@ int parse_client_file(int fd, transaction_t *transactions, int size) {
     char line[MAX_LINE];
     int line_len = 0;
     int tx_count = 0;
-    int current_client_id = 0;
     int flag = 0;
     while (!flag) {
 
@@ -143,6 +142,9 @@ int main(int argc, char *argv[])
     client_info_t client_info;
     client_info.pid = getpid();
     client_info.client_counter = tx_count;
+    for (int i = 0; i < tx_count; i++) {
+        strcpy(client_info.clients_name[i], transactions[i].bank_id);
+    }
     write(server_fifo_fd, &client_info, sizeof(client_info_t));
     printf("%d\n", client_info.pid);
     return 0;
