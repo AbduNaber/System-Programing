@@ -23,6 +23,9 @@
         "stat.h": "c",
         "types.h": "c",
         "bankdefination.h": "c",
-        "stdarg.h": "c"
-    }
+        "stdarg.h": "c",
+        "sstream": "c",
+        "mman.h": "c"
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }

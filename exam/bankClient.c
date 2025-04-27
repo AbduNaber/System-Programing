@@ -1,27 +1,38 @@
 
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdio.h>
 #include "bankDefination.h"
 
 
 
-void write_error(const char* msg);
-void write_output(const char* msg);
+
+void write_error(int count, ...);
+void write_output(int count, ...);
 void print_transactions(transaction_t *tx, int tx_count);
-
+int create_teller_fifo(int tx_count);
 void clear_heap(client_t *clients, int client_count) ;
+void open_teller_fifo(int tx_count, teller_fifo_t * teller_fifo_fd_list);
+void write_error(int count, ...) {
+    va_list args;
+    va_start(args, count);
 
-void write_error(const char* msg) {
-    write(STDERR_FILENO, msg, strlen(msg));
+    for (int i = 0; i < count; i++) {
+        const char* msg = va_arg(args, const char*);
+        write(STDERR_FILENO, msg, strlen(msg));
+    }
+
+    va_end(args);
 }
 
-void write_output(const char* msg) {
-    write(STDOUT_FILENO, msg, strlen(msg));
-}
+void write_output(int count, ...) {
+    va_list args;
+    va_start(args, count);
 
+    for (int i = 0; i < count; i++) {
+        const char* msg = va_arg(args, const char*);
+        write(STDOUT_FILENO, msg, strlen(msg));
+    }
+
+    va_end(args);
+}
 
 int parse_client_file(int fd, transaction_t *transactions, int size) {
     char buf[1];
@@ -35,7 +46,7 @@ int parse_client_file(int fd, transaction_t *transactions, int size) {
         if (bytes_read == 0) {
             flag = 1; // End of file
         } else if (bytes_read == -1) {
-            write_error("Error reading from file\n");
+            write_error(1,"Error reading from file\n");
             return -1;
         }
 
@@ -98,32 +109,39 @@ unsigned int extract_client_number(const char *id_str) {
 int main(int argc, char *argv[])
 {
     if(argc != 3){
-        write_error("Usage: ");
-        write(STDERR_FILENO, argv[0], strlen(argv[0])); 
-        write_error(" <client_file_name> <server_fifo_name>\n");
+        
+        write_output(3,"Usage: ", argv[0], " <client_file_name> <server_fifo_name>\n");
         return 1;
     }
     char *client_file_name = argv[1];
 
     int client_file_fd = open(client_file_name, O_RDONLY);
     if (client_file_fd == -1) {
-        write_error("Error opening client file\n");
+        write_error(1,"Error opening client file\n");
         return 1;
     }
-    write_output("Reading ");
-    write(STDOUT_FILENO, client_file_name, strlen(client_file_name));
-    write_output("...\n");
+    char output[BUFSIZ];
+   
+
+    write_output(3,"Reading ", client_file_name, "...\n");
+
     transaction_t * transactions = malloc(sizeof(transaction_t) * INITIAL_TX);
     int tx_count = 0;
     tx_count = parse_client_file(client_file_fd, transactions, INITIAL_TX);
-    //print_transactions(transactions, tx_count);
-    //printf("Total transactions: %d\n", tx_count);
+    teller_fifo_t teller_fifo_fds[tx_count];
+    snprintf(output, sizeof(output), "%d clients to connect.. creating clients..\n", tx_count);
+    if(create_teller_fifo(tx_count) == -1){
+        write(STDERR_FILENO, "Error creating teller FIFO\n", 28);
+        return 1;
+    }
 
-
+    
     char *server_fifo_name = argv[2];
     int server_fifo_fd = open(server_fifo_name, O_WRONLY);
     if (server_fifo_fd == -1) {
-        write(STDERR_FILENO, "Error opening server_fifo\n", 27);
+        write_error(3, "Error opening ", server_fifo_name, "...\n");
+        write_output(1,"EXITING...\n");
+        
         return 1;
     }
 
@@ -135,9 +153,10 @@ int main(int argc, char *argv[])
     }
     char msg[BUFSIZ];
     read(client_fifo_fd,msg,BUFSIZ);
-    write_output("Connected to ");
-    write(STDOUT_FILENO,msg,strlen(msg));
-    write_output("...\n");
+
+    write_output(3,"Connected to ", msg, "...\n");
+
+    
     
     client_info_t client_info;
     client_info.pid = getpid();
@@ -146,10 +165,63 @@ int main(int argc, char *argv[])
         strcpy(client_info.clients_name[i], transactions[i].bank_id);
     }
     write(server_fifo_fd, &client_info, sizeof(client_info_t));
-    printf("%d\n", client_info.pid);
+    
+    open_teller_fifo(tx_count, teller_fifo_fds);
+    for (int i = 0; i < tx_count; i++) {
+        write(teller_fifo_fds[i].teller_req_fifo_fd, &transactions[i], sizeof(transaction_t));
+        close(teller_fifo_fds[i].teller_req_fifo_fd);
+
+    }
+    for (int i = 0; i < tx_count; i++) {
+        char fifo_name[BUFSIZ];
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d.fifo", i);
+        unlink(fifo_name);
+    }
+
     return 0;
 }
 
+
+int create_teller_fifo(int tx_count){
+    
+    for (int i = 0; i < tx_count; i++) {
+        char fifo_name[BUFSIZ];
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_req.fifo", i);
+        if (mkfifo(fifo_name, 0666) == -1) {
+            write(STDERR_FILENO, "Error creating FIFO\n", 21);
+            return -1;
+        }
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_res.fifo", i);
+        if (mkfifo(fifo_name, 0666) == -1) {
+            write(STDERR_FILENO, "Error creating FIFO\n", 21);
+            return -1;
+        }
+        
+    }
+    return 0;
+    
+}
+
+void open_teller_fifo(int tx_count, teller_fifo_t * teller_fifo_fds){
+    char fifo_name[BUFSIZ];
+    for (int i = 0; i < tx_count; i++) {
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_req.fifo", i);
+        teller_fifo_fds[i].teller_req_fifo_fd = open(fifo_name, O_WRONLY);
+        if (teller_fifo_fds[i].teller_req_fifo_fd  == -1) {
+            write(STDERR_FILENO, "Error opening FIFO\n", 20);
+            return;
+        }
+        
+    }
+    for (int i = 0; i < tx_count; i++) {
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_res.fifo", i);
+        teller_fifo_fds[i].teller_res_fifo_fd = open(fifo_name, O_RDONLY);
+        if (teller_fifo_fds[i].teller_res_fifo_fd  == -1) {
+            write(STDERR_FILENO, "Error opening FIFO\n", 20);
+            return;
+        }    
+    }
+}   
 
 
 void print_transactions(transaction_t *tx, int tx_count) {

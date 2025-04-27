@@ -40,6 +40,8 @@ client:
 clean:
 	rm -f $(CLIENT_TARGET) $(SERVER_TARGET)
 
+clean_teller_fifo:
+	rm -f /tmp/teller*.fifo
 vd:
 	valgrind --leak-check=full --track-origins=yes ./$(CLIENT_TARGET) $(CLIENT_ARG) & \	
 	./$(SERVER_TARGET) $(SERVER_ARG)

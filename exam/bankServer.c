@@ -1,23 +1,10 @@
-
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/wait.h>
-#include <signal.h>
-#include <time.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdarg.h>
-#include <sys/mman.h>  
-#include <sys/wait.h>   
+ 
 #include "bankDefination.h"
 
 
-
 #define TELLER_SHM_NAME "/teller_shm"
+
+
 
 int parse_clients_log(int fd, client_t *clients, int *client_count_out) ;
 int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) ;
@@ -25,6 +12,7 @@ void print_clients(client_t * clients, int client_count);
 void clear_heap(client_t *clients, int client_count) ;
 pid_t Teller (void* func, void* arg_func);
 int find_client_index(client_t *clients, int client_count, const char *id);
+void intToStr(int N, char *str);
 
 pid_t Teller (void* func, void* arg_func){
     pid_t teller_pid = fork();
@@ -38,6 +26,55 @@ pid_t Teller (void* func, void* arg_func){
     return teller_pid;
 }
 
+void teller_helper(void *arg) {
+
+    teller_arg_t *teller_arg = (teller_arg_t *)arg;
+    int teller_fifo_number = teller_arg->teller_id;
+    char teller_fifo_name[256];
+    sleep(1);
+    snprintf(teller_fifo_name, sizeof(teller_fifo_name), "/tmp/teller_%d_req.fifo", teller_fifo_number);
+    
+    int teller_fifo_req_fd = open(teller_fifo_name, O_RDONLY);
+    if (teller_fifo_req_fd == -1) {
+        write(STDERR_FILENO, "Error opening teller_req FIFO\n", 26);
+        return;
+    }
+    printf("..%s\n", teller_fifo_name);
+    snprintf(teller_fifo_name, sizeof(teller_fifo_name), "/tmp/teller_%d_res.fifo", teller_fifo_number);
+    int teller_fifo_res_fd = open(teller_fifo_name, O_WRONLY);
+    if (teller_fifo_res_fd == -1) {
+        write(STDERR_FILENO, "Error opening teller FIFO\n", 26);
+        return;
+    }
+    
+    printf("...%s\n", teller_fifo_name);
+    transaction_t transaction;
+    read(teller_fifo_req_fd, &transaction, sizeof(transaction));
+    char output[256];
+    snprintf(output, sizeof(output), "Teller %d: Processing transaction for client %s: %s %d\n", teller_fifo_number, transaction.bank_id, transaction.op == DEPOSIT ? "Deposit" : "Withdraw", transaction.amount);
+    write(STDOUT_FILENO, output, strlen(output));
+
+    int written = 0;
+    while (!written) {
+        sem_wait(teller_arg->sem);
+    
+        if (teller_arg->shared_teller->server_read == 1) {
+            teller_arg->shared_teller->transaction = transaction;
+            teller_arg->shared_teller->teller_pid = getpid();
+            teller_arg->shared_teller->server_read = 0;  // Mark: server must read now
+            written = 1; // exit the while loop
+        }
+    
+        sem_post(teller_arg->sem);
+    
+        if (!written) sleep(0.1);  
+    }
+   
+
+    close(teller_fifo_req_fd);
+
+
+}
 
 int waitTeller(pid_t pid, int *status) {
     return waitpid(pid, status, 0);
@@ -66,7 +103,6 @@ void write_output(int count, ...) {
 
     va_end(args);
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -114,6 +150,14 @@ int main(int argc, char *argv[])
     }
     shared_teller->teller_pid =-1;
     shared_teller->transaction = (transaction_t){0};
+    shared_teller->server_read = 1;
+    sem_t *shared_sem = mmap(NULL, sizeof(sem_t),
+    PROT_READ | PROT_WRITE,
+    MAP_SHARED | MAP_ANONYMOUS,
+    -1, 0);
+
+    sem_init(shared_sem, 1, 1); 
+
 
     write_output(2,bank_name, " is waiting for clients...\n");
 
@@ -147,7 +191,9 @@ int main(int argc, char *argv[])
     }
    
    
+    while(1){
 
+    
 
     write_output(3 ,"Waiting for clients @", server_fifo_name, "...\n");
 
@@ -181,38 +227,71 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    char client_info_str[256]= "";
+    char console_msg[256]= "";
     
-    snprintf(client_info_str, sizeof(client_info_str), "%dClientX...", client_info.pid);
-    write_output(2, client_info_str, "\n");
-    for (int i = 0; i < client_info.client_counter; i++) {
+    snprintf(console_msg, sizeof(console_msg), "Received %d clients from %dClient...",client_info.client_counter, client_info.pid);
+    write_output(2, console_msg, "\n");
+    int client_number = client_info.client_counter;
+    pid_t tellers_pid[client_number];
+    teller_arg_t teller_arg[client_number];
 
-        if(find_client_index(clients, client_count, client_info.clients_name[i]) == -1) {
-            write_output(3, "New client: ", client_info.clients_name[i], "\n");
-        }
-        else {
-            write_output(3, "Existing client: ", client_info.clients_name[i], "\n");
-        }
-        
-    }
-    pid_t tellers_pid[MAX_TX_PER_CLIENT];
     int teller_count = 0;
+    int teller_client_id = 0;
     // create tellers for each client
-    for (int i = 0; i < client_info.client_counter; i++) {
-       tellers_pid[teller_count] = Teller(NULL, NULL);
+    for (int i = 0; i < client_number; i++) {
+
+        teller_arg[i].teller_id = i;
+        teller_arg[i].shared_teller = shared_teller;
+        teller_arg[i].sem = shared_sem;   
+        tellers_pid[teller_count] = Teller(teller_helper, &teller_arg[i]);    
         if (tellers_pid[teller_count++] == -1) {
             write(STDERR_FILENO, "Error creating teller\n", 23);
             return 1;
         }
-        
+        teller_client_id = find_client_index(clients, client_count, client_info.clients_name[i]);
+        if(teller_client_id == -1){
+            snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving client%d", tellers_pid[teller_count-1],i );
+        }
+        else{
+            snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving %s. Welcome Back ", tellers_pid[teller_count-1], clients[teller_client_id].bank_id);
+        }
+        write_output(2, console_msg, "\n");
         
     }
+    for (int i = 0; i < teller_count; i++) {
+        int updated = 0;
+        while (!updated) {
+            sem_wait(shared_sem);
+            if (shared_teller->server_read == 0) {
+                printf("read transaction amount: %d (teller PID: %d)\n",
+                       shared_teller->transaction.amount, shared_teller->teller_pid);
+                shared_teller->server_read = 1; // Mark as read
+                updated = 1; // Done
+            }
+            sem_post(shared_sem);
+            if (!updated) sleep(0.1); // Sleep 1ms
+        }
+    }
 
+    close(server_fifo_fd);
+    close(client_fifo_fd);
+
+    for (int i = 0; i < teller_count; i++) {
+        int status;
+        waitTeller(tellers_pid[i], &status);
+        // if (WIFEXITED(status)) {
+        //     snprintf(console_msg, sizeof(console_msg), "Teller %d finished with status %d\n", tellers_pid[i], WEXITSTATUS(status));
+        //     write_output(2, console_msg, "\n");
+        // } else {
+        //     write(STDERR_FILENO, "Teller process terminated abnormally\n", 37);
+        // }
+    }
+}
 
     close(log_fd);
+
     unlink(server_fifo_name);
     unlink(CLIENT_FIFO_NAME);
-
     clear_heap(clients, client_count);
 
     write_output(2, bank_name, " says Bye...\n");
@@ -342,15 +421,12 @@ void print_clients(client_t * clients, int client_count){
     }
 }
 
-
-
 void clear_heap(client_t *clients, int client_count) {
     for (int i = 0; i < client_count; i++) {
         free(clients[i].transactions);
     }
     free(clients);
 }
-
 
 int find_client_index(client_t *clients, int client_count, const char *id) {
     for (int i = 0; i < client_count; i++) {
@@ -361,7 +437,10 @@ int find_client_index(client_t *clients, int client_count, const char *id) {
     return -1; // Not found
 }
 
-
+int extract_client_id(char *bank_id) {
+    char *underscore = strchr(bank_id, '_');
+    return atoi(underscore + 1);
+}
 
 void intToStr(int N, char *str) {
     int i = 0;
