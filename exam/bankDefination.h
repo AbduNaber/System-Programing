@@ -17,7 +17,7 @@
 #include <sys/mman.h>  
 #include <sys/wait.h>  
 #include <semaphore.h>
-
+#include <signal.h>
 
 #define MAX_LINE 256
 #define MAX_TX_PER_CLIENT 1024
@@ -53,6 +53,7 @@ typedef struct{
     char bank_id[20];
     int credits;
     transaction_t *transactions;
+    int transaction_count;
 } client_t;
 
 typedef struct{
@@ -76,7 +77,7 @@ typedef struct{
 typedef struct{
     int teller_id;
     int client_id;
-} teller_client_map;
+} teller_client_map_t;
 
 typedef struct{
     int teller_req_fifo_fd;
@@ -90,6 +91,7 @@ typedef struct{
 
  typedef struct {
     int teller_id;
+    int client_id;
     teller_t *shared_teller;
     sem_t *sem;
     server_response *response;  

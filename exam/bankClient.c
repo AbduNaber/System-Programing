@@ -122,7 +122,6 @@ int main(int argc, char *argv[])
     }
     char output[BUFSIZ];
    
-
     write_output(3,"Reading ", client_file_name, "...\n");
 
     transaction_t * transactions = malloc(sizeof(transaction_t) * INITIAL_TX);
@@ -155,8 +154,6 @@ int main(int argc, char *argv[])
     read(client_fifo_fd,msg,BUFSIZ);
 
     write_output(3,"Connected to ", msg, "...\n");
-
-    
     
     client_info_t client_info;
     client_info.pid = getpid();
@@ -167,6 +164,30 @@ int main(int argc, char *argv[])
     }
     write(server_fifo_fd, &client_info, sizeof(client_info_t));
     
+
+    teller_client_map_t teller_client_map[tx_count];
+    int c = 0;
+    for (int i = 0; i < tx_count; i++) {
+        teller_client_map[i].teller_id = 0;
+        teller_client_map[i].client_id = 0;
+    }
+
+    teller_client_map_t temp = {0,0};
+    while(temp.teller_id != -1 && temp.client_id != -1) {
+       
+        read(client_fifo_fd, &temp, sizeof(teller_client_map_t));
+        
+        if(temp.teller_id != -1 && temp.client_id != -1) {
+            teller_client_map[c].teller_id = temp.teller_id;
+            teller_client_map[c].client_id = temp.client_id;
+            snprintf(output, sizeof(output), "Client%d connected.. %s %d credits", temp.client_id,transactions[c-1].op == WITHDRAW ? "withdrawing" :  "depositing" , transactions[c-1].amount);
+            write_output(2, output, "\n");
+            c++;
+        }
+        
+    }
+    
+
     open_teller_fifo(tx_count, teller_fifo_fds);
     for (int i = 0; i < tx_count; i++) {
         write(teller_fifo_fds[i].teller_req_fifo_fd, &transactions[i], sizeof(transaction_t));
@@ -243,3 +264,5 @@ void clear_heap(client_t *clients, int client_count) {
     }
     free(clients);
 }
+
+

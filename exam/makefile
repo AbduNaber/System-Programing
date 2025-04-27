@@ -22,7 +22,8 @@ $(SERVER_TARGET): $(SERVER_SRC)
 
 run_server:
 	./$(SERVER_TARGET) $(SERVER_ARG)
-run_client:
+run_client: clean_teller_fifo
+	
 	./$(CLIENT_TARGET) $(CLIENT_ARG)
 run:
 	./$(CLIENT_TARGET) $(CLIENT_ARG) & \

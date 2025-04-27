@@ -1,5 +1,9 @@
-# Adabank Log file updated @10:37 April 18 2025
-# BankID_01 D 300 W 300 0
+# Adabank Log file updated @00:00 April 28 2025
+BankID_01 D 300 W 300 D 300 D 300 D 300 D 300 1200
 BankID_02 D 2000 2000
 BankID_03 D 20 20
+BankID_4 D 2000 2000
+BankID_5 D 2000 2000
+BankID_6 D 2000 2000
+BankID_7 D 2000 2000
 ## end of log.
