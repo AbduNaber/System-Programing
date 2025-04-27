@@ -162,6 +162,7 @@ int main(int argc, char *argv[])
     client_info.pid = getpid();
     client_info.client_counter = tx_count;
     for (int i = 0; i < tx_count; i++) {
+        printf("Client %d: %s\n", i, transactions[i].bank_id);
         strcpy(client_info.clients_name[i], transactions[i].bank_id);
     }
     write(server_fifo_fd, &client_info, sizeof(client_info_t));

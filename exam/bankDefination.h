@@ -34,6 +34,15 @@ typedef enum{
     WITHDRAW = 2
 } operation;
 
+typedef enum{
+    INITIALIZE = 0,
+    SUCCESS = 1,
+    FAILURE = 2,
+    ACCOUNT_DELETED = 3,
+    INSUFFICIENT_CREDITS = 4,
+} server_response;
+
+
 typedef struct{
     char bank_id[20];
     operation op;
@@ -49,7 +58,7 @@ typedef struct{
 typedef struct{
     pid_t pid;
     int client_counter;
-    char clients_name[20][MAX_TX_PER_CLIENT];
+    char clients_name[INITIAL_CLIENTS][20];
 } client_info_t;
 
 typedef struct{
@@ -60,8 +69,14 @@ typedef struct{
 typedef struct{
     transaction_t transaction;
     pid_t teller_pid;
+    int teller_id;
     int server_read;
 } teller_t;
+
+typedef struct{
+    int teller_id;
+    int client_id;
+} teller_client_map;
 
 typedef struct{
     int teller_req_fifo_fd;
@@ -76,7 +91,8 @@ typedef struct{
  typedef struct {
     int teller_id;
     teller_t *shared_teller;
-    sem_t *sem;  
+    sem_t *sem;
+    server_response *response;  
 } teller_arg_t;
 //#define BUFSIZ 1024
 

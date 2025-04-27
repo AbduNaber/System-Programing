@@ -25,7 +25,8 @@
         "bankdefination.h": "c",
         "stdarg.h": "c",
         "sstream": "c",
-        "mman.h": "c"
+        "mman.h": "c",
+        "thread": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

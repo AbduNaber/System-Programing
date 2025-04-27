@@ -13,6 +13,8 @@ void clear_heap(client_t *clients, int client_count) ;
 pid_t Teller (void* func, void* arg_func);
 int find_client_index(client_t *clients, int client_count, const char *id);
 void intToStr(int N, char *str);
+void update_client(client_t *client, transaction_t *transaction) ;
+
 
 pid_t Teller (void* func, void* arg_func){
     pid_t teller_pid = fork();
@@ -59,6 +61,7 @@ void teller_helper(void *arg) {
         sem_wait(teller_arg->sem);
     
         if (teller_arg->shared_teller->server_read == 1) {
+            teller_arg->shared_teller->teller_id = teller_fifo_number;
             teller_arg->shared_teller->transaction = transaction;
             teller_arg->shared_teller->teller_pid = getpid();
             teller_arg->shared_teller->server_read = 0;  // Mark: server must read now
@@ -148,6 +151,9 @@ int main(int argc, char *argv[])
         write(STDERR_FILENO, "Error mapping shared memory\n", 29);
         return 1;
     }
+
+    // Initialize the shared teller
+    shared_teller->teller_id = -1;
     shared_teller->teller_pid =-1;
     shared_teller->transaction = (transaction_t){0};
     shared_teller->server_read = 1;
@@ -156,16 +162,19 @@ int main(int argc, char *argv[])
     MAP_SHARED | MAP_ANONYMOUS,
     -1, 0);
 
+
+
     sem_init(shared_sem, 1, 1); 
 
+    
 
     write_output(2,bank_name, " is waiting for clients...\n");
 
     char log_file_name[256] = "";
     strcat(log_file_name, bank_name);
     strcat(log_file_name, ".bankLog");
-
-    client_t *clients = malloc(sizeof(client_t) * INITIAL_CLIENTS);
+    int client_capacity = INITIAL_CLIENTS;
+    client_t *clients = malloc(sizeof(client_t) * client_capacity);
     int client_count = 0;
     int log_fd = open(log_file_name, O_RDWR, 0644);
     if(log_fd == -1){
@@ -189,8 +198,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
-   
-   
+    int served_client_counter = 0;
     while(1){
 
     
@@ -227,44 +235,66 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    
+
     char console_msg[256]= "";
     
     snprintf(console_msg, sizeof(console_msg), "Received %d clients from %dClient...",client_info.client_counter, client_info.pid);
     write_output(2, console_msg, "\n");
+    
     int client_number = client_info.client_counter;
+    
     pid_t tellers_pid[client_number];
     teller_arg_t teller_arg[client_number];
+    server_response responses[client_number] ;
+    teller_client_map teller_client_map[client_number];
+
+
+    for (int i = 0; i < client_number; i++) {
+        teller_client_map[i].teller_id = -1;
+        teller_client_map[i].client_id = -1;
+    }
+    for (int i = 0; i < client_number; i++) {
+        responses[i] = INITIALIZE;
+    }
 
     int teller_count = 0;
-    int teller_client_id = 0;
     // create tellers for each client
     for (int i = 0; i < client_number; i++) {
 
         teller_arg[i].teller_id = i;
         teller_arg[i].shared_teller = shared_teller;
-        teller_arg[i].sem = shared_sem;   
+        teller_arg[i].sem = shared_sem; 
+        teller_arg[i].response = &responses[i]; 
+
         tellers_pid[teller_count] = Teller(teller_helper, &teller_arg[i]);    
         if (tellers_pid[teller_count++] == -1) {
             write(STDERR_FILENO, "Error creating teller\n", 23);
             return 1;
         }
-        teller_client_id = find_client_index(clients, client_count, client_info.clients_name[i]);
+
+        int teller_client_id = find_client_index(clients,client_count, client_info.clients_name[i]) ;
         if(teller_client_id == -1){
-            snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving client%d", tellers_pid[teller_count-1],i );
+            snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving client%d", tellers_pid[teller_count-1],i);
+            teller_client_map[teller_count-1].teller_id = i;
+            teller_client_map[teller_count-1].client_id = i+served_client_counter;
         }
         else{
             snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving %s. Welcome Back ", tellers_pid[teller_count-1], clients[teller_client_id].bank_id);
+            teller_client_map[teller_count-1].teller_id = tellers_pid[teller_count-1];
+            teller_client_map[teller_count-1].client_id = teller_client_id;
         }
         write_output(2, console_msg, "\n");
         
     }
+
     for (int i = 0; i < teller_count; i++) {
         int updated = 0;
         while (!updated) {
             sem_wait(shared_sem);
             if (shared_teller->server_read == 0) {
-                printf("read transaction amount: %d (teller PID: %d)\n",
-                       shared_teller->transaction.amount, shared_teller->teller_pid);
+                
+               
                 shared_teller->server_read = 1; // Mark as read
                 updated = 1; // Done
             }
@@ -275,16 +305,11 @@ int main(int argc, char *argv[])
 
     close(server_fifo_fd);
     close(client_fifo_fd);
-
+    int status;
     for (int i = 0; i < teller_count; i++) {
-        int status;
+        
         waitTeller(tellers_pid[i], &status);
-        // if (WIFEXITED(status)) {
-        //     snprintf(console_msg, sizeof(console_msg), "Teller %d finished with status %d\n", tellers_pid[i], WEXITSTATUS(status));
-        //     write_output(2, console_msg, "\n");
-        // } else {
-        //     write(STDERR_FILENO, "Teller process terminated abnormally\n", 37);
-        // }
+        
     }
 }
 
@@ -298,6 +323,24 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+void update_client(client_t *client, transaction_t *transaction) {
+    if (client == NULL || transaction == NULL) return;
+
+   
+    if (transaction->op == DEPOSIT) {
+        client->credits += transaction->amount;
+    } else if (transaction->op == WITHDRAW) {
+        client->credits -= transaction->amount;
+    }
+    for (int i = 0; i < MAX_TX_PER_CLIENT; i++) {
+        if (client->transactions[i].op == 0) { // Find an empty slot
+            client->transactions[i] = *transaction;
+            break;
+        }
+    }
+    
+}
+
 int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) {
     // Check if the client already exists
     for (int i = 0; i < *client_count; i++) {
@@ -305,7 +348,33 @@ int get_or_create_client(client_t **clients, int *client_count, int *client_capa
             return i; // Client already exists
         }
     }
-    // Need to create a new one
+    if(strcmp(id, "N") == 0){
+            // Need to create a new one
+        if (*client_count >= *client_capacity) {
+            int new_cap = (*client_capacity) * 2;
+            client_t *new_clients = realloc(*clients, sizeof(client_t) * new_cap);
+            if (!new_clients) return -1;
+            *clients = new_clients;
+            *client_capacity = new_cap;
+        }
+
+        client_t *c = &(*clients)[*client_count];
+        snprintf(c->bank_id, sizeof(c->bank_id), "BankID_%d",*client_count);
+        
+        c->credits = 0;
+        c->transactions = malloc(sizeof(transaction_t) * MAX_TX_PER_CLIENT);
+        if (!c->transactions) return -1;
+        (*client_count)++;
+        return (*client_count - 1);
+    }
+    else{
+        return -1;
+    }   
+    
+}
+
+int load_client_from_log(client_t **clients, int *client_count, int *client_capacity, char * id){
+   
     if (*client_count >= *client_capacity) {
         int new_cap = (*client_capacity) * 2;
         client_t *new_clients = realloc(*clients, sizeof(client_t) * new_cap);
@@ -315,7 +384,8 @@ int get_or_create_client(client_t **clients, int *client_count, int *client_capa
     }
 
     client_t *c = &(*clients)[*client_count];
-    strcpy(c->bank_id, id);
+    snprintf(c->bank_id, sizeof(c->bank_id), "%s", id);
+    
     c->credits = 0;
     c->transactions = malloc(sizeof(transaction_t) * MAX_TX_PER_CLIENT);
     if (!c->transactions) return -1;
@@ -351,7 +421,7 @@ int parse_clients_log(int fd, client_t *clients, int *client_count_out) {
             if (!token) continue;
 
             char *client_id = token;
-            int client_index = get_or_create_client(&clients, &client_count, &client_capacity, client_id);
+            int client_index = load_client_from_log(&clients, &client_count, &client_capacity, client_id);
             if (client_index == -1) return -1;
 
             client_t *client = &clients[client_index];
