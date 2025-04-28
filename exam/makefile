@@ -4,8 +4,8 @@ CFLAGS = -Wall -Wextra -g -pthread
 # Source files and target
 SERVER_SRC = bankServer.c
 CLIENT_SRC = bankClient.c
-CLIENT_TARGET = bankClient
-SERVER_TARGET = bankServer
+CLIENT_TARGET = BankClient
+SERVER_TARGET = BankServer
 SERVER_ARG = AdaBank Test.fifo
 CLIENT_ARG = Client01.file Test.fifo
 
@@ -38,8 +38,11 @@ client:
 
 	
 # Clean up build files
-clean:
+clean: 
+	rm -f /tmp/teller*.fifo
 	rm -f $(CLIENT_TARGET) $(SERVER_TARGET)
+	
+	
 
 clean_teller_fifo:
 	rm -f /tmp/teller*.fifo

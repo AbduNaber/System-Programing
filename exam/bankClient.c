@@ -159,7 +159,7 @@ int main(int argc, char *argv[])
 
     write_output(3,"Connected to ", msg, "...\n");
     
-    client_info_t client_info;
+    client_info_t client_info = {0};
     client_info.pid = getpid();
     client_info.client_counter = tx_count;
     for (int i = 0; i < tx_count; i++) {
@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
         if(temp.teller_id != -1 && temp.client_id != -1) {
             teller_client_map[c].teller_id = temp.teller_id;
             teller_client_map[c].client_id = temp.client_id;
-            snprintf(output, sizeof(output), "Client%d connected.. %s %d credits", teller_client_map[c].client_id ,transactions[c-1].op == WITHDRAW ? "withdrawing" :  "depositing" , transactions[c-1].amount);
+            snprintf(output, sizeof(output), "Client%d connected.. %s %d credits", teller_client_map[c].client_id ,transactions[c].op == WITHDRAW ? "withdrawing" :  "depositing" , transactions[c].amount);
             write_output(2, output, "\n");
             c++;
         }
@@ -214,6 +214,10 @@ int main(int argc, char *argv[])
         } else if (teller_res[i].response.response == INSUFFICIENT_CREDITS) {
             snprintf(output, sizeof(output), "Client%d served: Insufficient credits %s", teller_res[i].client_id, transactions[transaction_index].bank_id);
             write_output(2, output, "\n");
+        }
+        else if (teller_res[i].response.response == ACCOUNT_DELETED) {
+            snprintf(output, sizeof(output), "Client%d served: Account deleted %s", teller_res[i].client_id, transactions[transaction_index].bank_id);
+            write_output(2, output, "\n");
         } else {
             snprintf(output, sizeof(output), "Client %d: Operation not permitted", teller_res[i].client_id);
             write_output(2, output, "\n");
@@ -227,6 +231,7 @@ int main(int argc, char *argv[])
         unlink(fifo_name);
         close(client_fifo_fd);
         close(server_fifo_fd);
+        free(transactions);
     }
 
     return 0;
@@ -296,11 +301,6 @@ void print_transactions(transaction_t *tx, int tx_count) {
 
 
 
-void clear_heap(client_t *clients, int client_count) {
-    for (int i = 0; i < client_count; i++) {
-        free(clients[i].transactions);
-    }
-    free(clients);
-}
+   
 
 

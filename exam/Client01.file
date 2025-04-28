@@ -1,16 +1,1 @@
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
-N deposit 300
-N deposit 2000
+BankID_1 withdraw 400

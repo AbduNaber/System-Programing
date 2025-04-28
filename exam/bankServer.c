@@ -386,14 +386,6 @@ int main(int argc, char *argv[])
     }
 
 }
-
-    close(log_fd);
-
-    unlink(server_fifo_name);
-    unlink(CLIENT_FIFO_NAME);
-    clear_heap(clients_db, client_count_db);
-
-    write_output(2, bank_name, " says Bye...\n");
     return 0;
 }
 
@@ -701,6 +693,8 @@ void handle_sigint(int sig) {
     write(STDOUT_FILENO, "Removing ServerFIFO… Updating log file…\n" , 45);
     save_log();
     clear_heap(clients_db, client_count_db);
+    client_count_db = 0;
+    clients_db = NULL;
     if (log_fd != -1) {
         close(log_fd);
     }
