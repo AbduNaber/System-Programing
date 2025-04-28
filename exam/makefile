@@ -1,6 +1,6 @@
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g -pthread
+CFLAGS = -Wall -Wextra -g -pthread 
 # Source files and target
 SERVER_SRC = bankServer.c
 CLIENT_SRC = bankClient.c
@@ -13,12 +13,9 @@ all: $(CLIENT_TARGET) $(SERVER_TARGET)
 # Default target
 # Build target
 $(CLIENT_TARGET): $(CLIENT_SRC)
-	$(CC) $(CFLAGS) $(CLIENT_SRC) -o $(CLIENT_TARGET)
+	$(CC) $(CFLAGS) $(CLIENT_SRC) -o $(CLIENT_TARGET) -lrt
 $(SERVER_TARGET): $(SERVER_SRC)
-	$(CC) $(CFLAGS) $(SERVER_SRC) -o $(SERVER_TARGET)
-
-
-
+	$(CC) $(CFLAGS) $(SERVER_SRC) -o $(SERVER_TARGET) -lrt
 
 run_server:
 	./$(SERVER_TARGET) $(SERVER_ARG)
