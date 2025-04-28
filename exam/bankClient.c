@@ -10,6 +10,9 @@ void print_transactions(transaction_t *tx, int tx_count);
 int create_teller_fifo(int tx_count);
 void clear_heap(client_t *clients, int client_count) ;
 void open_teller_fifo(int tx_count, teller_fifo_t * teller_fifo_fd_list);
+int find_transaction_index(transaction_t *transactions, int tx_count, char *bank_id);
+
+
 void write_error(int count, ...) {
     va_list args;
     va_start(args, count);
@@ -128,7 +131,8 @@ int main(int argc, char *argv[])
     int tx_count = 0;
     tx_count = parse_client_file(client_file_fd, transactions, INITIAL_TX);
     teller_fifo_t teller_fifo_fds[tx_count];
-    snprintf(output, sizeof(output), "%d clients to connect.. creating clients..\n", tx_count);
+    snprintf(output, sizeof(output), "%d clients to connect.. creating clients..", tx_count);
+    write_output(2, output, "\n");
     if(create_teller_fifo(tx_count) == -1){
         write(STDERR_FILENO, "Error creating teller FIFO\n", 28);
         return 1;
@@ -138,8 +142,8 @@ int main(int argc, char *argv[])
     char *server_fifo_name = argv[2];
     int server_fifo_fd = open(server_fifo_name, O_WRONLY);
     if (server_fifo_fd == -1) {
-        write_error(3, "Error opening ", server_fifo_name, "...\n");
-        write_output(1,"EXITING...\n");
+        write_error(3, "Cannot connect ", server_fifo_name, "...\n");
+        write_output(1,"exiting.....\n");
         
         return 1;
     }
@@ -159,7 +163,6 @@ int main(int argc, char *argv[])
     client_info.pid = getpid();
     client_info.client_counter = tx_count;
     for (int i = 0; i < tx_count; i++) {
-        printf("Client %d: %s\n", i, transactions[i].bank_id);
         strcpy(client_info.clients_name[i], transactions[i].bank_id);
     }
     write(server_fifo_fd, &client_info, sizeof(client_info_t));
@@ -180,7 +183,7 @@ int main(int argc, char *argv[])
         if(temp.teller_id != -1 && temp.client_id != -1) {
             teller_client_map[c].teller_id = temp.teller_id;
             teller_client_map[c].client_id = temp.client_id;
-            snprintf(output, sizeof(output), "Client%d connected.. %s %d credits", temp.client_id,transactions[c-1].op == WITHDRAW ? "withdrawing" :  "depositing" , transactions[c-1].amount);
+            snprintf(output, sizeof(output), "Client%d connected.. %s %d credits", teller_client_map[c].client_id ,transactions[c-1].op == WITHDRAW ? "withdrawing" :  "depositing" , transactions[c-1].amount);
             write_output(2, output, "\n");
             c++;
         }
@@ -194,15 +197,50 @@ int main(int argc, char *argv[])
         close(teller_fifo_fds[i].teller_req_fifo_fd);
 
     }
+    teller_res_t teller_res[tx_count];
+    for(int i = 0; i < tx_count; i++) {
+        char fifo_name[BUFSIZ];
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_res.fifo", i);
+        read(teller_fifo_fds[i].teller_res_fifo_fd, &teller_res[i], sizeof(teller_res_t));
+        close(teller_fifo_fds[i].teller_res_fifo_fd);
+    }
+
+    for (int i = 0; i < tx_count; i++) {
+        int transaction_index = teller_res[i].teller_id;
+        if (teller_res[i].response.response == SUCCESS) {
+            snprintf(output, sizeof(output), "Client%d served: %s", teller_res[i].client_id,teller_res[i].response.bank_id); 
+            
+            write_output(2, output, "\n");
+        } else if (teller_res[i].response.response == INSUFFICIENT_CREDITS) {
+            snprintf(output, sizeof(output), "Client%d served: Insufficient credits %s", teller_res[i].client_id, transactions[transaction_index].bank_id);
+            write_output(2, output, "\n");
+        } else {
+            snprintf(output, sizeof(output), "Client %d: Operation not permitted", teller_res[i].client_id);
+            write_output(2, output, "\n");
+        }
+    }
     for (int i = 0; i < tx_count; i++) {
         char fifo_name[BUFSIZ];
-        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d.fifo", i);
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_req.fifo", i);
         unlink(fifo_name);
+        snprintf(fifo_name, sizeof(fifo_name), "/tmp/teller_%d_res.fifo", i);
+        unlink(fifo_name);
+        close(client_fifo_fd);
+        close(server_fifo_fd);
     }
 
     return 0;
 }
 
+
+int find_transaction_index(transaction_t *transactions, int tx_count, char *bank_id) {
+    for (int i = 0; i < tx_count; i++) {
+        if (strcmp(transactions[i].bank_id, bank_id) == 0) {
+            return i;
+        }
+    }
+    return -1; // Not found
+}
 
 int create_teller_fifo(int tx_count){
     

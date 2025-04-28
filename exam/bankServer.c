@@ -4,6 +4,7 @@
 
 #define TELLER_SHM_NAME "/teller_shm"
 
+
 // global variables
 pid_t tellers_pid[MAX_TX_PER_CLIENT];
 int  active_tellers = 0;
@@ -12,7 +13,7 @@ pid_t mainServer_pid = 0;
 client_t *clients_db = NULL;
 int client_count_db = 0;
 int log_fd = 0;
-
+char *server_fifo_name = NULL;
 
 int parse_clients_log(int fd, client_t *clients, int *client_count_out) ;
 int get_or_create_client(client_t **clients, int *client_count, int *client_capacity, char * id) ;
@@ -48,14 +49,14 @@ void teller_helper(void *arg) {
     
     int teller_fifo_req_fd = open(teller_fifo_name, O_RDONLY);
     if (teller_fifo_req_fd == -1) {
-        write(STDERR_FILENO, "Error opening teller_req FIFO\n", 26);
+        write(STDERR_FILENO, "Error opening teller_req FIFO\n", 31);
         return;
     }
     
     snprintf(teller_fifo_name, sizeof(teller_fifo_name), "/tmp/teller_%d_res.fifo", teller_fifo_number);
     int teller_fifo_res_fd = open(teller_fifo_name, O_WRONLY);
     if (teller_fifo_res_fd == -1) {
-        write(STDERR_FILENO, "Error opening teller FIFO\n", 26);
+        write(STDERR_FILENO, "Error opening teller FIFO\n", 27);
         return;
     }
     
@@ -81,13 +82,16 @@ void teller_helper(void *arg) {
     
         if (!written) sleep(0.1);  
     }
-    while(teller_arg->response == INITIALIZE){
+    
+    while(teller_arg->response->response == INITIALIZE){
         sleep(0.1);
     }
     teller_res_t teller_res;
-
+    teller_res.teller_id = teller_fifo_number; 
+    teller_res.client_id = teller_arg->client_id;  
+    memcpy(&teller_res.response, teller_arg->response, sizeof(server_response));
+    write(teller_fifo_res_fd, &teller_res, sizeof(teller_res_t));
     
-    close(teller_fifo_req_fd);
 
 
 }
@@ -139,7 +143,7 @@ int main(int argc, char *argv[])
     mainServer_pid = getpid();
 
     char *bank_name = argv[1];
-    char *server_fifo_name = argv[2];
+    server_fifo_name = argv[2];
 
     if (mkfifo(server_fifo_name, 0666) == -1) {
         if (errno == EEXIST) {
@@ -159,6 +163,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+
     int shm_fd = shm_open(TELLER_SHM_NAME, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) {
         
@@ -177,11 +182,16 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+   
+
+
+
     // Initialize the shared teller
     shared_teller->teller_id = -1;
     shared_teller->teller_pid =-1;
     shared_teller->transaction = (transaction_t){0};
     shared_teller->server_read = 1;
+
     sem_t *shared_sem = mmap(NULL, sizeof(sem_t),
     PROT_READ | PROT_WRITE,
     MAP_SHARED | MAP_ANONYMOUS,
@@ -207,7 +217,7 @@ int main(int argc, char *argv[])
             write_output(1,"No previous logs.. Creating the bank database\n");
             log_fd = open(log_file_name, O_RDWR | O_CREAT, 0644);
             if(log_fd == -1){
-                write(STDERR_FILENO, "Error creating log file\n", 24); 
+                write(STDERR_FILENO, "Error creating log file\n", 25); 
                 return 1;
             }
         }
@@ -223,6 +233,10 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+
+    
+        
+        
     int served_client_counter = 0;
     while(1){
 
@@ -256,7 +270,7 @@ int main(int argc, char *argv[])
     client_info_t client_info;
     read(server_fifo_fd, &client_info, sizeof(client_info_t));
     if (client_info.client_counter == -1) {
-        write(STDERR_FILENO, "Error reading client info\n", 26);
+        write(STDERR_FILENO, "Error reading client info\n", 27);
         return 1;
     }
 
@@ -271,35 +285,44 @@ int main(int argc, char *argv[])
     
     
     teller_arg_t teller_arg[client_number];
-    server_response responses[client_number] ;
+    
     teller_client_map_t teller_client_map[client_number];
 
+    server_response *responses = mmap(NULL, sizeof(server_response)*client_number, PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (responses == MAP_FAILED) {
+        write(STDERR_FILENO, "Error mapping shared memory for responses\n", 43);
+        return 1;
+    }
+    
+    for (int i = 0; i < client_number; i++) {
+        responses[i].response = INITIALIZE;
+    }
 
     for (int i = 0; i < client_number; i++) {
         teller_client_map[i].teller_id = -1;
         teller_client_map[i].client_id = -1;
     }
-    for (int i = 0; i < client_number; i++) {
-        responses[i] = INITIALIZE;
-    }
+   
 
     int teller_count = 0;
     // create tellers for each client
     for (int i = 0; i < client_number; i++) {
 
+        int teller_client_id = find_client_index(clients_db,client_count_db, client_info.clients_name[i]) ;
+
+
         teller_arg[i].teller_id = i;
         teller_arg[i].shared_teller = shared_teller;
         teller_arg[i].sem = shared_sem; 
         teller_arg[i].response = &responses[i]; 
-
+        teller_arg[i].client_id = teller_client_id == -1 ? i + served_client_counter : teller_client_id;
         tellers_pid[teller_count] = Teller(teller_helper, &teller_arg[i]);   
         active_tellers++;
         if (tellers_pid[teller_count++] == -1) {
             write(STDERR_FILENO, "Error creating teller\n", 23);
             return 1;
-        }
-
-        int teller_client_id = find_client_index(clients_db,client_count_db, client_info.clients_name[i]) ;
+        }        
         if(teller_client_id == -1){
             snprintf(console_msg, sizeof(console_msg), "Teller PID%d is active serving client%d", tellers_pid[teller_count-1],i+served_client_counter);
             teller_client_map[teller_count-1].teller_id = tellers_pid[teller_count-1];
@@ -311,6 +334,7 @@ int main(int argc, char *argv[])
             teller_client_map[teller_count-1].teller_id = tellers_pid[teller_count-1];
             teller_client_map[teller_count-1].client_id = teller_client_id;
         }
+        
         write(client_fifo_fd, &teller_client_map[teller_count-1], sizeof(teller_client_map_t));
         write_output(2, console_msg, "\n");
         
@@ -330,14 +354,18 @@ int main(int argc, char *argv[])
                 
                 int client_index = get_or_create_client(&clients_db, &client_count_db, &client_capacity, shared_teller->transaction.bank_id);
                 if( client_index == -1) {
-                    responses[shared_teller->teller_id] = FAILURE;
-                    write(STDERR_FILENO, "operation not permitted.\n", 26);
+                    responses[shared_teller->teller_id].response = FAILURE;
+                    write(STDERR_FILENO, "operation not permitted..\n", 27);
                    
                 }
+                
                 else{
                     server_response answer = update_client(&clients_db[client_index], &shared_teller->transaction);
                     responses[shared_teller->teller_id] = answer;
-                    write(STDOUT_FILENO, "updating log\n", 14);
+                    write(STDOUT_FILENO, "updating log..\n", 16);
+                    if(update_log_file(log_fd, clients_db, client_count_db) == -1){
+                        write(STDERR_FILENO, "Error updating log file\n", 25);
+                    }
                 }
                 shared_teller->server_read = 1; // Mark as read
                 updated = 1; // Done
@@ -354,12 +382,9 @@ int main(int argc, char *argv[])
     for (int i = 0; i < teller_count; i++) {
         
         waitTeller(tellers_pid[i], &status);
-        active_tellers--;
+        
     }
 
-    printf("----------CLIENT LIST----------------\n");
-        print_clients(clients_db,client_count_db);
-    printf("----------END OF CLIENT LIST----------------\n");
 }
 
     close(log_fd);
@@ -375,12 +400,12 @@ int main(int argc, char *argv[])
 int update_log_file(int fd, client_t *clients, int client_count) {
 
     if (ftruncate(fd, 0) == -1) {
-        write(STDERR_FILENO, "Error truncating log file\n", 26);
+        write(STDERR_FILENO, "Error truncating log file\n", 27);
         return -1;
     }
     // Reset file offset to beginning
     if (lseek(fd, 0, SEEK_SET) == -1) {
-        write(STDERR_FILENO, "Error seeking in log file\n", 26);
+        write(STDERR_FILENO, "Error seeking in log file\n", 27);
         return -1;
     }
 
@@ -439,15 +464,15 @@ int teller_client_map_find(teller_client_map_t *map,int teller_count, int teller
 }
 
 server_response update_client(client_t *client, transaction_t *transaction) {
-    server_response res = INITIALIZE;
-    if (client == NULL || transaction == NULL) return -1;
+    server_response res;
+    strcpy(res.bank_id, client->bank_id);
 
    
     if (transaction->op == DEPOSIT) {
         client->credits += transaction->amount;
     } else if (transaction->op == WITHDRAW) {
         if (client->credits < transaction->amount) {
-            res = INSUFFICIENT_CREDITS;
+            res.response = INSUFFICIENT_CREDITS;
             return res; // Insufficient credits
         }
         client->credits -= transaction->amount;
@@ -462,10 +487,10 @@ server_response update_client(client_t *client, transaction_t *transaction) {
     }
     client->transaction_count++;
     if(client->credits == 0){
-        res = ACCOUNT_DELETED;
+        res.response = ACCOUNT_DELETED;
         return res; // Account deleted
     }
-    res = SUCCESS;
+    res.response = SUCCESS;
     return res; // Success
     
 }
@@ -665,25 +690,22 @@ void handle_sigint(int sig) {
 
     if (sig != SIGINT) return;
     if (mainServer_pid != getpid()) return;
-    write(STDOUT_FILENO, "\nSignal received closing active Tellers\n", 41);
-
+    write(STDOUT_FILENO, "\nSignal received closing active tellers\n", 41);
     for (int i = 0; i < active_tellers; i++) {
         if (kill(tellers_pid[i], SIGKILL) == 0) {
-            write(STDOUT_FILENO, "Teller killed successfully\n", 28);
         } else if (errno == ESRCH) {
-            write(STDOUT_FILENO, "Teller already dead\n", 21);
         } else {
             write(STDERR_FILENO, "Error killing teller\n", 22);
         }
     }
-    write(STDOUT_FILENO, "Updating log file…" , 21);
+    write(STDOUT_FILENO, "Removing ServerFIFO… Updating log file…\n" , 45);
     save_log();
     clear_heap(clients_db, client_count_db);
     if (log_fd != -1) {
         close(log_fd);
     }
     unlink(CLIENT_FIFO_NAME);
-    
+    unlink(server_fifo_name);
     write(STDOUT_FILENO, "Bye...\n", 8);
     exit(0);
 }

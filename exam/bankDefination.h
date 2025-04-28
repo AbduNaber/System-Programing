@@ -40,6 +40,11 @@ typedef enum{
     FAILURE = 2,
     ACCOUNT_DELETED = 3,
     INSUFFICIENT_CREDITS = 4,
+} server_response_enum;
+
+typedef struct {
+    server_response_enum response;
+    char bank_id[20];
 } server_response;
 
 
@@ -85,8 +90,9 @@ typedef struct{
  } teller_fifo_t;
 
 typedef struct{
+    int teller_id;
     int client_id;
-    char bank_id[20];
+    server_response response;
  } teller_res_t;
 
  typedef struct {
