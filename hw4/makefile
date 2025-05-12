@@ -1,10 +1,10 @@
 all: loganalyzer
 
-loganalyzer: main.o buffer.o
-	gcc -o LogAnalyzer main.o buffer.o -lpthread 
+loganalyzer: 210104004072_main.o buffer.o
+	gcc -o LogAnalyzer 210104004072_main.o buffer.o -lpthread 
 
-main.o: main.c buffer.h
-	gcc -c main.c
+210104004072_main.o: 210104004072_main.c buffer.h
+	gcc -c 210104004072_main.c
 
 buffer.o: buffer.c buffer.h
 	gcc -c buffer.c
@@ -12,5 +12,5 @@ buffer.o: buffer.c buffer.h
 clean:
 	rm -f *.o LogAnalyzer
 
-error:
+run:
 	./LogAnalyzer 20 4 logs/sample.log "ERROR"

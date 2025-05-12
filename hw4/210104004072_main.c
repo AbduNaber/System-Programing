@@ -53,7 +53,7 @@ void *manager_thread(void *arg) {
     free(line); // Free buffer allocated by getline
     fclose(fp);
 
-    printf("Manager thread finished reading. Signaling workers...\n");
+   
 
     // Signal that manager is done adding items
     pthread_mutex_lock(&shared_buffer.lock);
@@ -61,7 +61,7 @@ void *manager_thread(void *arg) {
     pthread_cond_broadcast(&shared_buffer.not_empty); // Wake up any waiting workers
     pthread_mutex_unlock(&shared_buffer.lock);
 
-    printf("Manager thread exiting.\n");
+    
     return NULL;
 }
 
@@ -70,27 +70,24 @@ void *worker_thread(void *arg) {
     int local_count = 0;
     char *line;
 
-    // printf("[Thread %ld] Worker started.\n", id); // Debug
+    
     while (!stop) {
         line = buffer_get(&shared_buffer);
         if (!line) {
-            // printf("[Thread %ld] Received NULL, exiting loop.\n", id); // Debug
-            break; // Exit loop if manager is done and buffer is empty, or if stop is signaled
+            
+            break;
         }
 
         if (strstr(line, search_term)) {
             local_count++;
-            // Protect printf if multiple threads might write concurrently
-            // Or accumulate output and print only at the end
-             printf("[Thread %ld] Found: %s", id, line); // Might interleave output
         }
 
-        free(line); // Free the line received from buffer
-        // usleep(100); // Optional: simulate work/yield
+        free(line); 
+       
     }
 
     matches[id] = local_count;
-    // printf("[Thread %ld] Worker exiting. Matches: %d\n", id, local_count); // Debug
+    printf("[Thread %ld] Worker exiting. Matches: %d\n", id, local_count); // Debug
     return NULL;
 }
 
@@ -101,10 +98,10 @@ int main(int argc, char *argv[]) {
     }
 
     struct sigaction sa;
-    memset(&sa, 0, sizeof(sa)); // Clear struct
+    memset(&sa, 0, sizeof(sa)); 
     sa.sa_handler = sigint_handler;
-    sigemptyset(&sa.sa_mask);   // no signals blocked during handler
-    sa.sa_flags = SA_RESTART; // Restart syscalls if possible after handler
+    sigemptyset(&sa.sa_mask);  
+    sa.sa_flags = SA_RESTART; 
 
     if (sigaction(SIGINT, &sa, NULL) == -1) {
         perror("sigaction failed");
@@ -161,15 +158,15 @@ int main(int argc, char *argv[]) {
     for (long i = 0; i < num_workers; i++) { // Use long for thread id
          if (pthread_create(&workers[i], NULL, worker_thread, (void *)i) != 0) {
              perror("Failed to create worker thread");
-             // Attempt cleanup: Signal stop, join already created threads/manager
-             stop = 1; // Signal other threads to stop
+            
+             stop = 1; 
              pthread_mutex_lock(&shared_buffer.lock);
-             shared_buffer.manager_done = true; // Ensure manager_done is set
+             shared_buffer.manager_done = true; 
              pthread_cond_broadcast(&shared_buffer.not_empty);
              pthread_mutex_unlock(&shared_buffer.lock);
 
-             pthread_join(manager, NULL); // Wait for manager
-             for (long j = 0; j < i; j++) { // Join successfully created workers
+             pthread_join(manager, NULL); 
+             for (long j = 0; j < i; j++) { 
                  pthread_join(workers[j], NULL);
              }
              free(matches);
@@ -179,12 +176,11 @@ int main(int argc, char *argv[]) {
          }
     }
 
-    printf("Main: Waiting for manager thread to join...\n");
+   
     pthread_join(manager, NULL);
-    printf("Main: Manager thread joined.\n");
+    
 
-
-    printf("Main: Waiting for worker threads to join...\n");
+  
     for (int i = 0; i < num_workers; i++) {
         pthread_join(workers[i], NULL);
         // printf("Main: Worker thread %d joined.\n", i); // Debug
@@ -201,7 +197,7 @@ int main(int argc, char *argv[]) {
     }
     printf("Total matches: %d\n", total);
 
-    // Removed barrier destroy
+    
     buffer_destroy(&shared_buffer);
     free(matches);
     free(workers);

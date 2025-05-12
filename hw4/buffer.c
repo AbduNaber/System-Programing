@@ -18,9 +18,7 @@ void buffer_init(buffer_t *buf, int size) {
 }
 
 void buffer_destroy(buffer_t *buf) {
-    // Ensure all allocated lines in buffer are freed if not consumed
-    // This might happen during abrupt termination (e.g., SIGINT)
-    // Note: This assumes buffer_get transfers ownership of the string
+   
     while(buf->count > 0) {
         free(buf->lines[buf->out]);
         buf->out = (buf->out + 1) % buf->size;
@@ -34,17 +32,16 @@ void buffer_destroy(buffer_t *buf) {
 
 void buffer_add(buffer_t *buf, char *line) {
     pthread_mutex_lock(&buf->lock);
-    // Wait only if the buffer is full AND the manager is not done/stopping
+    
     while (buf->count == buf->size && !buf->manager_done && !stop) {
         pthread_cond_wait(&buf->not_full, &buf->lock);
     }
     
 
-    // If stopping or manager finished while waiting, just unlock and potentially drop the line
+    
     if (stop || buf->manager_done) {
         pthread_mutex_unlock(&buf->lock);
-        // Optional: Free line if we decide not to add it upon stop/manager_done signal
-        // free(line);
+     
         return;
     }
 
@@ -58,30 +55,29 @@ void buffer_add(buffer_t *buf, char *line) {
 char *buffer_get(buffer_t *buf) {
     pthread_mutex_lock(&buf->lock);
 
-    // Wait while the buffer is empty AND the manager hasn't finished AND not stopping
+   
     while (buf->count == 0 && !buf->manager_done && !stop) {
         pthread_cond_wait(&buf->not_empty, &buf->lock);
     }
 
-    // If the buffer is empty AND (manager is done OR stop signal received), return NULL
+   
     if (buf->count == 0 && (buf->manager_done || stop)) {
         pthread_mutex_unlock(&buf->lock);
-        return NULL; // Signal worker to terminate
+        return NULL;
     }
 
-    // If we woke up due to stop signal but there are still items, process them
-    // If buffer isn't empty, proceed regardless of manager_done or stop status
+    
     if (buf->count > 0) {
          char *line = buf->lines[buf->out];
          buf->out = (buf->out + 1) % buf->size;
          buf->count--;
 
-         pthread_cond_signal(&buf->not_full); // Signal producer (manager) if it was waiting
+         pthread_cond_signal(&buf->not_full); 
          pthread_mutex_unlock(&buf->lock);
          return line;
     }
 
-    // Should theoretically not be reached with the above conditions, but as a safeguard:
+   
     pthread_mutex_unlock(&buf->lock);
     return NULL;
 
