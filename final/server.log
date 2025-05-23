@@ -1,0 +1,10 @@
+2025-05-24 00:28:04 - Server started on port 12345
+2025-05-24 00:28:06 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-24 00:28:08 - [USER: test] - set username
+2025-05-24 00:28:10 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-24 00:28:44 - [USER: test] - joined room 'a'
+2025-05-24 00:28:47 - [USER: ] - joined room 'a'
+2025-05-24 00:28:57 - [USER: a] - set username
+2025-05-24 00:29:11 - [WHISPER] from 'test' to 'a': teeeeeeeeeee
+2025-05-24 00:29:17 - Client 0 disconnected
+2025-05-24 00:29:19 - Client 1 disconnected

@@ -1,39 +1,48 @@
-// Compile: gcc chatclient.c -o chatclient
+// Compile: gcc chatclient.c -o chatclient -lpthread
 #include "chatDefination.h"
 
-void handleJoin(int sock, char *room, char *current_room, char *buffer) {
-    snprintf(buffer, BUFFER_SIZE, "/join %s", room);
-    send(sock, buffer, strlen(buffer), 0);
-    snprintf(current_room, 50, "%s", room);
-    printf("[Server]: You joined the room '%s'\n", room);
+pthread_t server_response_thread;
+int running = 1;
+
+void *server_response_handler(void *arg) {
+    int sock = *(int *)arg;
+    char buffer[BUFFER_SIZE];
+    
+    while (running) {
+        memset(buffer, 0, BUFFER_SIZE);
+        int n = read(sock, buffer, BUFFER_SIZE - 1);
+        if (n > 0) {
+            buffer[n] = '\0';
+            printf("\n%s\n> ", buffer);
+            fflush(stdout);
+        } else if (n == 0) {
+            printf("\nServer disconnected.\n");
+            running = 0;
+            break;
+        } else {
+            if (running) {
+                perror("Read error");
+            }
+            break;
+        }
+    }
+    return NULL;
 }
 
-void handleBroadcast(int sock, char *msg, char *current_room, char *buffer) {
-    snprintf(buffer, BUFFER_SIZE, "/broadcast %s", msg);
-    send(sock, buffer, strlen(buffer), 0);
-    printf("[Server]: Message sent to room '%s'\n", current_room);
-}
-
-void handleWhisper(int sock, char *user, char *msg, char *buffer) {
-    snprintf(buffer, BUFFER_SIZE, "/whisper %s %s", user, msg);
-    send(sock, buffer, strlen(buffer), 0);
-    printf("[Server]: Whisper sent to %s\n", user);
-}
-
-void handleSendfile(int sock, char *file, char *user, char *buffer) {
-    snprintf(buffer, BUFFER_SIZE, "/sendfile %s %s", file, user);
-    send(sock, buffer, strlen(buffer), 0);
-    printf("[Server]: File added to the upload queue.\n");
-}
-
-void handleExit(int sock, char *buffer) {
-    snprintf(buffer, BUFFER_SIZE, "/exit");
-    send(sock, buffer, strlen(buffer), 0);
-    printf("[Server]: Disconnected. Goodbye!\n");
+void print_help() {
+    printf("\nAvailable commands:\n");
+    printf("/username <name>     - Set your username\n");
+    printf("/join <room>         - Join a chat room\n");
+    printf("/broadcast <msg>     - Broadcast message to current room\n");
+    printf("/whisper <user> <msg>- Send private message to user\n");
+    printf("/sendfile <file> <user> - Send file to user (simulated)\n");
+    printf("/list                - List users in current room\n");
+    printf("/help                - Show this help\n");
+    printf("/exit                - Exit the chat\n");
+    printf("Or just type a message to send to current room\n\n");
 }
 
 int main(int argc, char *argv[]) {
-
     if (argc != 3) {
         fprintf(stderr, "Usage: ./%s <server_ip> <port>\n", argv[0]);
         exit(1);
@@ -54,9 +63,8 @@ int main(int argc, char *argv[]) {
     // Server address
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
-    server_addr.sin_addr.s_addr = inet_addr(argv[1]);
-
-    if (server_addr.sin_addr.s_addr == INADDR_NONE) {
+    
+    if (inet_pton(AF_INET, argv[1], &server_addr.sin_addr) <= 0) {
         fprintf(stderr, "Invalid address: %s\n", argv[1]);
         exit(1);
     }
@@ -66,67 +74,78 @@ int main(int argc, char *argv[]) {
         perror("Connection failed");
         exit(1);
     }
-    printf("Connected to server.\n");
+    printf("Connected to server at %s:%d\n", argv[1], port);
 
-    char username[50];
+    // Create a thread to handle server responses
+    if (pthread_create(&server_response_thread, NULL, server_response_handler, (void *)&sock) != 0) {
+        perror("Failed to create response thread");
+        close(sock);
+        exit(1);
+    }
+
+    // Get username
+    char username[MAX_USERNAME_LENGTH];
     printf("Enter your username: ");
-    fgets(username, sizeof(username), stdin);
-    username[strcspn(username, "\n")] = 0;
+    fflush(stdout);
+    if (fgets(username, sizeof(username), stdin) == NULL) {
+        printf("Error reading username\n");
+        running = 0;
+        close(sock);
+        exit(1);
+    }
+    username[strcspn(username, "\n")] = 0; // Remove newline
+    
+    if (strlen(username) == 0) {
+        printf("Username cannot be empty\n");
+        running = 0;
+        close(sock);
+        exit(1);
+    }
+    
     snprintf(buffer, BUFFER_SIZE, "/username %s", username);
     send(sock, buffer, strlen(buffer), 0);
-    memset(buffer, 0, BUFFER_SIZE);
-    read(sock, buffer, BUFFER_SIZE);
-    printf("%s\n", buffer);
+    
+    printf("\nWelcome %s! Type /help for available commands.\n", username);
 
-    char current_room[50] = "";
-    while (1) {
+    // Main command loop
+    while (running) {
         printf("> ");
-        fgets(buffer, BUFFER_SIZE, stdin);
-        buffer[strcspn(buffer, "\n")] = 0;
-
-        if (strncmp(buffer, "/join ", 6) == 0) {
-            char *room = buffer + 6;
-            handleJoin(sock, room, current_room, buffer);
-            continue;
-        } else if (strncmp(buffer, "/broadcast ", 11) == 0) {
-            char *msg = buffer + 11;
-            handleBroadcast(sock, msg, current_room, buffer);
-            continue;
-        } else if (strncmp(buffer, "/whisper ", 9) == 0) {
-            char *rest = buffer + 9;
-            char *space = strchr(rest, ' ');
-            if (space) {
-                *space = 0;
-                char *user = rest;
-                char *msg = space + 1;
-                handleWhisper(sock, user, msg, buffer);
-            }
-            continue;
-        } else if (strncmp(buffer, "/sendfile ", 10) == 0) {
-            char *rest = buffer + 10;
-            char *space = strchr(rest, ' ');
-            if (space) {
-                *space = 0;
-                char *file = rest;
-                char *user = space + 1;
-                handleSendfile(sock, file, user, buffer);
-            }
-            continue;
-        } else if (strcmp(buffer, "/exit") == 0) {
-            handleExit(sock, buffer);
+        fflush(stdout);
+        
+        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
             break;
-        } else {
-            // fallback: send as normal message
-            send(sock, buffer, strlen(buffer), 0);
         }
-
-        memset(buffer, 0, BUFFER_SIZE);
-        int n = read(sock, buffer, BUFFER_SIZE);
-        if (n > 0) {
-            printf("Server: %s\n", buffer);
+        
+        buffer[strcspn(buffer, "\n")] = 0; // Remove newline
+        
+        if (strlen(buffer) == 0) {
+            continue;
+        }
+        
+        if (strcmp(buffer, "/help") == 0) {
+            print_help();
+            continue;
+        }
+        
+        if (strcmp(buffer, "/exit") == 0) {
+            send(sock, buffer, strlen(buffer), 0);
+            running = 0;
+            break;
+        }
+        
+        // Send command/message to server
+        if (send(sock, buffer, strlen(buffer), 0) < 0) {
+            perror("Send failed");
+            break;
         }
     }
 
+    // Cleanup
+    running = 0;
+    pthread_cancel(server_response_thread);
+    pthread_join(server_response_thread, NULL);
     close(sock);
+    printf("Disconnected from server. Goodbye!\n");
+    
     return 0;
 }

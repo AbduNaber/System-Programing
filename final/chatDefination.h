@@ -7,9 +7,10 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
-#define PORT 12345
-
-
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <errno.h>
+#include <signal.h>
 
 #define PORT 12345
 #define BUFFER_SIZE 1024
