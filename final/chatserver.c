@@ -18,8 +18,11 @@ typedef struct {
     int member_count;
 } room_t;
 
+int running = 1;
+
 client_info_t clients[MAX_CLIENTS];
 room_t rooms[MAX_GROUPS];
+int server_fd;
 int room_count = 0;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -35,15 +38,47 @@ void remove_client_from_room(int client_index);
 void add_client_to_room(int client_index, char *room_name);
 void handle_command(int client_socket, char *message);
 void log_event(const char *format, ...);
+int relay_file(int sender_sock, int recipient_sock, size_t filesize) ;
+
+void signal_handler(int signal) {
+    if (signal == SIGINT || signal == SIGTERM) {
+        printf("\nServer shutting down...\n");
+        for(int i = 0; i < MAX_CLIENTS; i++) {
+            if (clients[i].active) {
+                shutdown(clients[i].socket, SHUT_RDWR);
+                clients[i].active = 0;
+                log_event("Client %d disconnected due to server shutdown", i);
+            }
+        }
+        shutdown(server_fd, SHUT_RDWR);
+        log_event("Server shutting down");
+        running = 0;
+    }
+    return ;
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: ./%s <port>\n", argv[0]);
         exit(1);
     }
-    
+
+    struct sigaction sa;
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART; // Automatically restart interrupted syscalls like accept()
+
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+    perror("sigaction");
+    exit(EXIT_FAILURE);
+    }
+    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+    perror("sigaction");
+    exit(EXIT_FAILURE);
+    }
+
     int port = atoi(argv[1]);
-    int server_fd;
+
     struct sockaddr_in server_addr, client_addr;
     socklen_t addr_len;
     
@@ -97,7 +132,7 @@ int main(int argc, char *argv[]) {
     printf("Server listening on port %d...\n", port);
     log_event("Server started on port %d", port);
     
-    while (1) {
+    while (running) {
         addr_len = sizeof(client_addr);
         int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
         if (client_socket < 0) {
@@ -130,12 +165,12 @@ int main(int argc, char *argv[]) {
                inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_index);
         log_event("[LOGIN] user slot %d connected from %s", client_index, inet_ntoa(client_addr.sin_addr));
         
-        // Create read and write threads for this client
-        pthread_t read_thread, write_thread;
+        
+        pthread_t client_handler_thread;
         int *client_index_ptr = malloc(sizeof(int));
         *client_index_ptr = client_index;
         
-        if (pthread_create(&read_thread, NULL, handle_client_read, client_index_ptr) != 0) {
+        if (pthread_create(&client_handler_thread, NULL, handle_client_read, client_index_ptr) != 0) {
             perror("Failed to create read thread");
             close(client_socket);
             clients[client_index].active = 0;
@@ -143,7 +178,7 @@ int main(int argc, char *argv[]) {
             continue;
         }
         
-        pthread_detach(read_thread);
+        pthread_detach(client_handler_thread);
     }
     
     close(server_fd);
@@ -171,15 +206,11 @@ void *handle_client_read(void *arg) {
         if (buffer[0] == '/') {
             handle_command(client_socket, buffer);
         } else {
-            // Regular message - broadcast to current room
-            if (strlen(clients[client_index].current_room) > 0) {
-                char formatted_msg[BUFFER_SIZE + 100];
-                snprintf(formatted_msg, sizeof(formatted_msg), "[%s]: %s", 
-                        clients[client_index].username, buffer);
-                broadcast_to_room(formatted_msg, clients[client_index].current_room, client_socket);
-            } else {
-                send(client_socket, "You must join a room first. Use /join <room_name>", 49, 0);
-            }
+            // if not a command, warm the user for entering a command
+            char response[BUFFER_SIZE*2];
+            snprintf(response, sizeof(response), "Unknown command: '%s'. Type /help for available commands.", buffer);
+            send(client_socket, response, strlen(response), 0);
+            log_event("[UNKNOWN COMMAND] user '%s': %s", clients[client_index].username, buffer);
         }
     }
     
@@ -269,24 +300,41 @@ void handle_command(int client_socket, char *message) {
             strcpy(response, "Usage: /whisper <username> <message>");
         }
         send(client_socket, response, strlen(response), 0);
+
+    } else if (strncmp(cmd, "/sendfile", 10) == 0) {
+        char recipient[32], filename[128];
+        sscanf(cmd + 10, "%31s %127s", recipient, filename);
+
+        send(client_socket, "READY_FOR_FILE\n", 16, 0);
+        // Receive filesize
+        char meta_buffer[64];
+        recv(clients[client_index].socket, meta_buffer, sizeof(meta_buffer), 0);
+        size_t filesize = atol(meta_buffer);
         
-    } else if (strcmp(cmd, "/sendfile") == 0) {
-        char *filename = strtok(NULL, " ");
-        char *target_user = strtok(NULL, " ");
-        if (filename && target_user) {
-            // Simulate file transfer (in real implementation, you'd handle actual file transfer)
-            char formatted_msg[BUFFER_SIZE + 100];
-            snprintf(formatted_msg, sizeof(formatted_msg), "[FILE from %s]: %s", 
-                    clients[client_index].username, filename);
-            send_private_message(formatted_msg, target_user, client_socket);
-            snprintf(response, sizeof(response), "File '%s' sent to %s", filename, target_user);
-            log_event("[SEND FILE] '%s' sent from %s to %s (success)", filename, clients[client_index].username, target_user);
-        } else {
-            strcpy(response, "Usage: /sendfile <filename> <username>");
+
+        // Find recipient socket
+        int recp_idx = find_client_by_username(recipient);
+        if (recp_idx < 0) {
+            send(clients[client_index].socket, "Recipient not found.\n", 21, 0);
+            return;
         }
-        send(client_socket, response, strlen(response), 0);
-        
-    } else if (strcmp(cmd, "/list") == 0) {
+        int recipient_sock = clients[recp_idx].socket;
+
+        // Inform recipient 
+        char filemeta[FILE_META_MSG_LEN];
+        snprintf(filemeta, sizeof(filemeta), "INCOMING_FILE %s %s %zu\n", clients[client_index].username, filename, filesize);
+        send(recipient_sock, filemeta, strlen(filemeta), 0);
+
+        // Wait for recipient's ACK (optional, can auto-accept)
+        // relay file
+        if (relay_file(clients[client_index].socket, recipient_sock, filesize) == 0) {
+            send(clients[client_index].socket, "File sent successfully.\n", 24, 0);
+            send(recipient_sock, "File received successfully.\n", 28, 0);
+        } else {
+            send(clients[client_index].socket, "File transfer failed.\n", 22, 0);
+            send(recipient_sock, "File transfer failed.\n", 22, 0);
+        }
+} else if (strcmp(cmd, "/list") == 0) {
         // List users in current room
         if (strlen(clients[client_index].current_room) > 0) {
             pthread_mutex_lock(&clients_mutex);
@@ -434,6 +482,25 @@ void add_client_to_room(int client_index, char *room_name) {
         rooms[room_index].members[rooms[room_index].member_count] = client_index;
         rooms[room_index].member_count++;
     }
+}
+
+
+int relay_file(int sender_sock, int recipient_sock, size_t filesize) {
+    char buffer[FILE_CHUNK_SIZE];
+    size_t bytes_left = filesize;
+    while (bytes_left > 0) {
+        size_t to_read = (bytes_left < FILE_CHUNK_SIZE) ? bytes_left : FILE_CHUNK_SIZE;
+        ssize_t n = recv(sender_sock, buffer, to_read, 0);
+        if (n <= 0) return -1;
+        ssize_t sent = 0;
+        while (sent < n) {
+            ssize_t s = send(recipient_sock, buffer + sent, n - sent, 0);
+            if (s <= 0) return -1;
+            sent += s;
+        }
+        bytes_left -= n;
+    }
+    return 0;
 }
 
 void log_event(const char *format, ...) {

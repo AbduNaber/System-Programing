@@ -1,10 +1,164 @@
-2025-05-24 00:28:04 - Server started on port 12345
-2025-05-24 00:28:06 - [LOGIN] user slot 0 connected from 127.0.0.1
-2025-05-24 00:28:08 - [USER: test] - set username
-2025-05-24 00:28:10 - [LOGIN] user slot 1 connected from 127.0.0.1
-2025-05-24 00:28:44 - [USER: test] - joined room 'a'
-2025-05-24 00:28:47 - [USER: ] - joined room 'a'
-2025-05-24 00:28:57 - [USER: a] - set username
-2025-05-24 00:29:11 - [WHISPER] from 'test' to 'a': teeeeeeeeeee
-2025-05-24 00:29:17 - Client 0 disconnected
-2025-05-24 00:29:19 - Client 1 disconnected
+2025-05-24 23:39:24 - Client 0 disconnected
+2025-05-24 23:39:24 - Client 1 disconnected
+2025-05-24 23:39:25 - Server shutting down
+2025-05-24 23:39:27 - Server started on port 5000
+2025-05-24 23:39:28 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-24 23:39:30 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-24 23:39:32 - [USER: 123] - set username
+2025-05-24 23:39:33 - [USER: 1234] - set username
+2025-05-24 23:39:58 - Client 0 disconnected
+2025-05-24 23:40:01 - Client 1 disconnected
+2025-05-24 23:40:02 - Server shutting down
+2025-05-24 23:40:22 - Server started on port 5000
+2025-05-24 23:40:24 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-24 23:40:25 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-24 23:40:27 - [USER: 123] - set username
+2025-05-24 23:40:28 - [USER: 1234] - set username
+2025-05-24 23:41:17 - Client 0 disconnected
+2025-05-24 23:41:24 - Client 1 disconnected
+2025-05-24 23:41:25 - Server shutting down
+2025-05-24 23:45:07 - Server started on port 5000
+2025-05-24 23:45:09 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-24 23:45:11 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-24 23:45:14 - [USER: 123] - set username
+2025-05-24 23:45:17 - [USER: 1234] - set username
+2025-05-24 23:45:40 - [UNKNOWN COMMAND] user '1234': a
+2025-05-24 23:45:43 - Client 1 disconnected
+2025-05-24 23:45:44 - Client 0 disconnected
+2025-05-24 23:48:52 - Server shutting down
+2025-05-24 23:49:00 - Server started on port 5000
+2025-05-24 23:49:02 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-24 23:49:04 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-24 23:49:09 - [USER: 123] - set username
+2025-05-24 23:49:12 - [USER: 1234] - set username
+2025-05-25 00:38:34 - Client 0 disconnected due to server shutdown
+2025-05-25 00:38:34 - Client 0 disconnected
+2025-05-25 00:38:34 - Client 1 disconnected due to server shutdown
+2025-05-25 00:38:34 - Client 1 disconnected
+2025-05-25 00:38:34 - Server shutting down
+2025-05-25 00:42:14 - Server started on port 5000
+2025-05-25 00:42:15 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:42:16 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-25 00:42:18 - [USER: aaaa] - set username
+2025-05-25 00:42:22 - [USER: aaaaaa] - set username
+2025-05-25 00:42:27 - Client 0 disconnected due to server shutdown
+2025-05-25 00:42:27 - Client 0 disconnected
+2025-05-25 00:42:27 - Client 1 disconnected due to server shutdown
+2025-05-25 00:42:27 - Client 1 disconnected
+2025-05-25 00:42:27 - Server shutting down
+2025-05-25 00:48:46 - Server started on port 5000
+2025-05-25 00:48:47 - Server shutting down
+2025-05-25 00:52:41 - Server started on port 5000
+2025-05-25 00:52:51 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:52:54 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-25 00:52:58 - [USER: Terk] - set username
+2025-05-25 00:53:04 - [USER: Esin] - set username
+2025-05-25 00:53:11 - Client 0 disconnected
+2025-05-25 00:53:13 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:53:14 - [USER: twqeqw] - set username
+2025-05-25 00:53:15 - Client 0 disconnected
+2025-05-25 00:53:17 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:53:18 - [USER: terk] - set username
+2025-05-25 00:53:19 - Client 0 disconnected
+2025-05-25 00:53:21 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:53:23 - [USER: Terk] - set username
+2025-05-25 00:53:36 - Client 0 disconnected
+2025-05-25 00:53:38 - Client 1 disconnected
+2025-05-25 00:53:39 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:53:41 - [USER: Tertk] - set username
+2025-05-25 00:53:44 - Client 0 disconnected
+2025-05-25 00:53:47 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:53:50 - [USER: terk] - set username
+2025-05-25 00:56:30 - [UNKNOWN COMMAND] user 'terk': a a
+2025-05-25 00:56:32 - [UNKNOWN COMMAND] user 'terk': a
+2025-05-25 00:56:33 - [UNKNOWN COMMAND] user 'terk': a
+2025-05-25 00:56:33 - [UNKNOWN COMMAND] user 'terk': a
+2025-05-25 00:56:33 - [UNKNOWN COMMAND] user 'terk': a
+2025-05-25 00:56:42 - Client 0 disconnected
+2025-05-25 00:56:43 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:56:44 - [USER: test] - set username
+2025-05-25 00:56:45 - [UNKNOWN COMMAND] user 'test': a
+2025-05-25 00:56:50 - [UNKNOWN COMMAND] user 'test': a
+2025-05-25 00:56:53 - Client 0 disconnected
+2025-05-25 00:56:54 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:56:55 - Client 0 disconnected
+2025-05-25 00:56:57 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:56:58 - [USER: aaaa] - set username
+2025-05-25 00:57:00 - [UNKNOWN COMMAND] user 'aaaa': aaaaaaaaaaaaaaa
+2025-05-25 00:57:01 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 00:57:02 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 00:57:03 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 00:57:03 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 00:57:04 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 00:59:42 - Client 0 disconnected due to server shutdown
+2025-05-25 00:59:42 - Client 0 disconnected
+2025-05-25 00:59:42 - Server shutting down
+2025-05-25 00:59:48 - Server started on port 5000
+2025-05-25 00:59:52 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 00:59:53 - [LOGIN] user slot 1 connected from 127.0.0.1
+2025-05-25 00:59:55 - [USER: 123] - set username
+2025-05-25 00:59:56 - [USER: 1231] - set username
+2025-05-25 01:00:06 - Client 1 disconnected
+2025-05-25 01:00:08 - Client 0 disconnected due to server shutdown
+2025-05-25 01:00:08 - Client 0 disconnected
+2025-05-25 01:00:08 - Server shutting down
+2025-05-25 01:02:07 - Server started on port 5000
+2025-05-25 01:02:08 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:02:10 - [USER: 123] - set username
+2025-05-25 01:02:50 - Client 0 disconnected due to server shutdown
+2025-05-25 01:02:50 - Client 0 disconnected
+2025-05-25 01:02:50 - Server shutting down
+2025-05-25 01:02:54 - Server started on port 5000
+2025-05-25 01:02:56 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:02:57 - [USER: 123] - set username
+2025-05-25 01:02:58 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:00 - [UNKNOWN COMMAND] user '123': aaa
+2025-05-25 01:03:01 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:01 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:02 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:02 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:02 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:02 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:03:03 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:05:22 - Client 0 disconnected
+2025-05-25 01:05:25 - Server shutting down
+2025-05-25 01:05:26 - Server started on port 5000
+2025-05-25 01:05:27 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:05:30 - [USER: 123] - set username
+2025-05-25 01:05:32 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:05:35 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:05:36 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:05:39 - Client 0 disconnected
+2025-05-25 01:07:50 - Server shutting down
+2025-05-25 01:07:52 - Server started on port 5000
+2025-05-25 01:07:54 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:07:56 - [USER: 1234] - set username
+2025-05-25 01:08:01 - Client 0 disconnected
+2025-05-25 01:08:01 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:08:03 - [USER: 123] - set username
+2025-05-25 01:08:03 - [UNKNOWN COMMAND] user '123': a
+2025-05-25 01:09:24 - Client 0 disconnected due to server shutdown
+2025-05-25 01:09:24 - Client 0 disconnected
+2025-05-25 01:09:24 - Server shutting down
+2025-05-25 01:10:35 - Server started on port 5000
+2025-05-25 01:10:39 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:10:40 - [USER: 123] - set username
+2025-05-25 01:10:49 - Client 0 disconnected
+2025-05-25 01:10:51 - Server shutting down
+2025-05-25 01:10:52 - Server started on port 5000
+2025-05-25 01:10:55 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:10:57 - [USER: 13221] - set username
+2025-05-25 01:11:01 - Client 0 disconnected
+2025-05-25 01:13:38 - Server shutting down
+2025-05-25 01:14:05 - Server started on port 5000
+2025-05-25 01:14:08 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:14:10 - [USER: 1234] - set username
+2025-05-25 01:14:13 - Client 0 disconnected
+2025-05-25 01:14:13 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:14:15 - Client 0 disconnected
+2025-05-25 01:14:17 - [LOGIN] user slot 0 connected from 127.0.0.1
+2025-05-25 01:14:18 - [USER: aaaa] - set username
+2025-05-25 01:14:23 - [USER: aaaa] - joined room 'a'
+2025-05-25 01:14:25 - [UNKNOWN COMMAND] user 'aaaa': a
+2025-05-25 01:14:27 - Client 0 disconnected
+2025-05-25 01:14:31 - Server shutting down
