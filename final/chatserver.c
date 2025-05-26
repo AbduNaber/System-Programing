@@ -42,7 +42,7 @@ int relay_file(int sender_sock, int recipient_sock, size_t filesize) ;
 
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        printf("\nServer shutting down...\n");
+        printf(ANSI_COLOR_YELLOW "\nServer shutting down...\n" ANSI_COLOR_RESET);
         for(int i = 0; i < MAX_CLIENTS; i++) {
             if (clients[i].active) {
                 shutdown(clients[i].socket, SHUT_RDWR);
