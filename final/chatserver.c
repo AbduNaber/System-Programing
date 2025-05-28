@@ -3,20 +3,7 @@
 #include <time.h>
 #include <stdarg.h>
 
-#define LOG_FILE "server.log"
 
-typedef struct {
-    int socket;
-    char username[MAX_USERNAME_LENGTH];
-    char current_room[MAX_GROUP_NAME_LENGTH];
-    int active;
-} client_info_t;
-
-typedef struct {
-    char name[MAX_GROUP_NAME_LENGTH];
-    int members[MAX_GROUP_MEMBERS];
-    int member_count;
-} room_t;
 
 int running = 1;
 
@@ -39,6 +26,13 @@ void add_client_to_room(int client_index, char *room_name);
 void handle_command(int client_socket, char *message);
 void log_event(const char *format, ...);
 int relay_file(int sender_sock, int recipient_sock, size_t filesize) ;
+
+void filequeue_init(FileQueue *q);
+int filequeue_enqueue(FileQueue *q, FileMeta *meta);
+int filequeue_dequeue(FileQueue *q, FileMeta *meta);
+int filequeue_start_transfer(FileQueue *q, FileMeta *meta);
+void filequeue_finish_transfer(FileQueue *q);
+int filequeue_try_start_next(FileQueue *q, FileMeta *meta);
 
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
@@ -124,6 +118,12 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
     
+    //setup file transfer queue
+    FileQueue file_queue;
+    filequeue_init(&file_queue);
+
+
+
     // Listen
     if (listen(server_fd, MAX_CLIENTS) < 0) {
         perror("Listen failed");
@@ -484,7 +484,6 @@ void add_client_to_room(int client_index, char *room_name) {
     }
 }
 
-
 int relay_file(int sender_sock, int recipient_sock, size_t filesize) {
     char buffer[FILE_CHUNK_SIZE];
     size_t bytes_left = filesize;
@@ -517,4 +516,76 @@ void log_event(const char *format, ...) {
     va_end(args);
     fprintf(log_fp, "\n");
     fclose(log_fp);
+}
+
+void filequeue_init(FileQueue *q) {
+    q->front = 0;
+    q->rear = 0;
+    q->count = 0;
+    q->active_transfers = 0;
+    pthread_mutex_init(&q->mutex, NULL);
+    pthread_cond_init(&q->not_empty, NULL);
+    pthread_cond_init(&q->not_full, NULL);
+}
+
+// Enqueue a file transfer request
+int filequeue_enqueue(FileQueue *q, FileMeta *meta) {
+    pthread_mutex_lock(&q->mutex);
+    while (q->count == MAX_FILE_QUEUE) {
+        pthread_cond_wait(&q->not_full, &q->mutex);
+    }
+    q->files[q->rear] = *meta;
+    q->rear = (q->rear + 1) % MAX_FILE_QUEUE;
+    q->count++;
+    pthread_cond_signal(&q->not_empty);
+    pthread_mutex_unlock(&q->mutex);
+    return 0;
+}
+
+int filequeue_dequeue(FileQueue *q, FileMeta *meta) {
+    pthread_mutex_lock(&q->mutex);
+    while (q->count == 0) {
+        pthread_cond_wait(&q->not_empty, &q->mutex);
+    }
+    *meta = q->files[q->front];
+    q->front = (q->front + 1) % MAX_FILE_QUEUE;
+    q->count--;
+    pthread_cond_signal(&q->not_full);
+    pthread_mutex_unlock(&q->mutex);
+    return 0;
+}
+
+int filequeue_start_transfer(FileQueue *q, FileMeta *meta) {
+    pthread_mutex_lock(&q->mutex);
+    if (q->active_transfers < MAX_SIMULTANEOUS_TRANSFERS) {
+        q->active_transfers++;
+        pthread_mutex_unlock(&q->mutex);
+        return 1; // Start transfer immediately
+    } else {
+        // Enqueue for later
+        filequeue_enqueue(q, meta);
+        pthread_mutex_unlock(&q->mutex);
+        return 0; // Queued
+    }
+}
+
+void filequeue_finish_transfer(FileQueue *q) {
+    pthread_mutex_lock(&q->mutex);
+    q->active_transfers--;
+    pthread_cond_signal(&q->not_full);
+    pthread_mutex_unlock(&q->mutex);
+}
+
+int filequeue_try_start_next(FileQueue *q, FileMeta *meta) {
+    pthread_mutex_lock(&q->mutex);
+    if (q->count > 0 && q->active_transfers < MAX_SIMULTANEOUS_TRANSFERS) {
+        *meta = q->files[q->front];
+        q->front = (q->front + 1) % MAX_FILE_QUEUE;
+        q->count--;
+        q->active_transfers++;
+        pthread_mutex_unlock(&q->mutex);
+        return 1; 
+    }
+    pthread_mutex_unlock(&q->mutex);
+    return 0; 
 }
