@@ -1,6 +1,13 @@
 {
     "files.associations": {
         "in.h": "c",
-        "chatdefination.h": "c"
+        "chatdefination.h": "c",
+        "stdarg.h": "c",
+        "array": "c",
+        "bitset": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "utility": "c",
+        "cstring": "c"
     }
 }

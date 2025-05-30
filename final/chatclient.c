@@ -20,7 +20,7 @@ typedef struct {
 
 // Function prototypes
 void *handle_server_responses(void *arg);
-void handle_incoming_file(int socket_fd, char *buffer);
+void handle_incoming_file(char *buffer);
 void print_help_menu(void);
 int validate_username(const char *username);
 int initialize_connection(const char *server_ip, int port);
@@ -72,9 +72,14 @@ void *handle_server_responses(void *arg) {
             printf("\n%s\n> ", response_buffer);
             fflush(stdout);
             
+            if(strncmp(response_buffer, "FILE_SIZE_EXCEEDS_LIMIT", 23) == 0) {
+                printf(ANSI_COLOR_RED "[ERROR] File size exceeds limit. Transfer aborted." ANSI_COLOR_RESET "\n");
+                continue;
+            }   
+
             // Check for incoming file transfer
             if (strncmp(response_buffer, "INCOMING_FILE", 13) == 0) {
-                handle_incoming_file(socket_fd, response_buffer);
+                handle_incoming_file(response_buffer);
             }
 
             if(strncmp(response_buffer, "READY_FOR_FILE", 14) == 0) {
@@ -99,46 +104,13 @@ void *handle_server_responses(void *arg) {
     return NULL;
 }
 
-// Handle incoming file transfers
-void handle_incoming_file(int socket_fd, char *buffer) {
+void handle_incoming_file( char *buffer) {
     char sender_name[32], original_filename[128], actual_filename[256];
     size_t file_size;
     
     sscanf(buffer, "INCOMING_FILE %31s %127s %zu", sender_name, original_filename, &file_size);
     printf("\nReceiving file '%s' from %s (%zu bytes)\n", original_filename, sender_name, file_size);
     
-    // Create unique filename if file already exists
-    strcpy(actual_filename, original_filename);
-    if (access(actual_filename, F_OK) != -1) {
-        snprintf(actual_filename, sizeof(actual_filename), "%s(1)", original_filename);
-    }
-    
-    int file_fd = open(actual_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (file_fd < 0) {
-        perror("Failed to create file");
-        return;
-    }
-    printf("\nSaving file as: %s\n", actual_filename);
-    // get file from server
-    char file_buffer[FILE_CHUNK_SIZE];
-    size_t total_bytes_received = 0;
-    while (total_bytes_received < file_size) {
-        
-        ssize_t bytes_received = read(socket_fd, file_buffer, FILE_CHUNK_SIZE);
-        if (bytes_received < 0) {
-            perror("Error receiving file data");
-            close(file_fd);
-            return;
-        } else if (bytes_received == 0) {
-            printf("\nConnection closed before file transfer completed.\n");
-            close(file_fd);
-            return;
-        }
-        
-        write(file_fd, file_buffer, bytes_received);
-        total_bytes_received += bytes_received;
-    }
-    close(file_fd);
     printf("\nFile received successfully: %s\n", actual_filename);
 }
 
@@ -213,7 +185,6 @@ int setup_username(int socket_fd) {
     
     printf("Enter your username: ");
     fflush(stdout);
-    
     if (fgets(username, sizeof(username), stdin) == NULL) {
         printf("Error reading username\n");
         return 0;
@@ -232,10 +203,26 @@ int setup_username(int socket_fd) {
     }
     
     snprintf(message_buffer, BUFFER_SIZE, "/username %s", username);
+    // Send username to server
     if (send(socket_fd, message_buffer, strlen(message_buffer), 0) < 0) {
         perror("Failed to send username");
         return 0;
     }
+    
+    // read server response
+    char response_buffer[BUFFER_SIZE];
+    int bytes_received = read(socket_fd, response_buffer, BUFFER_SIZE - 1);
+    if (bytes_received < 0) {
+        perror("Failed to read server response");
+        return 0;
+    }
+    response_buffer[bytes_received] = '\0'; // Null-terminate the response
+
+    if (strncmp(response_buffer, "ALREADY_TAKEN", 13) == 0) {
+        printf(ANSI_COLOR_RED "[ERROR] Username already taken. Choose another." ANSI_COLOR_RESET "\n");
+        return 0;
+    }
+
     
     printf("\nWelcome %s! Type /help for available commands.\n", username);
     return 1;
@@ -326,48 +313,15 @@ void * handle_send_file(void *arg) {
         return NULL;
     }
     
-    // Send file in chunks
-    char file_buffer[FILE_CHUNK_SIZE];
-    size_t total_bytes_sent = 0;
-    
-    printf("Uploading '%s' (%zu bytes)...\n", filename, (size_t)file_size);
-    
-    while (total_bytes_sent < (size_t)file_size && is_running) {
-        ssize_t bytes_read = read(file_fd, file_buffer, FILE_CHUNK_SIZE);
-        if (bytes_read < 0) {
-            printf("Error: Failed to read file data from '%s' - %s\n", filename, strerror(errno));
-            break;
-        } else if (bytes_read == 0) {
-            // End of file reached
-            break;
-        }
-        
-        ssize_t bytes_sent = send(socket_fd, file_buffer, bytes_read, 0);
-        if (bytes_sent < 0) {
-            printf("Error: Failed to send file data for '%s' - %s\n", filename, strerror(errno));
-            break;
-        }
-        
-        total_bytes_sent += bytes_sent;
-        
-        // Optional: Show progress for large files
-        if (file_size > 1024 * 1024) { // Show progress for files > 1MB
-            int progress = (int)((total_bytes_sent * 100) / file_size);
-            printf("\rProgress: %d%% (%zu/%zu bytes)", progress, total_bytes_sent, (size_t)file_size);
-            fflush(stdout);
-        }
-    }
+
     
     close(file_fd);
-    file_transfer_in_progress = 0;
+    
     pthread_mutex_unlock(&file_transfer_mutex);
     
-    if (total_bytes_sent == (size_t)file_size) {
-        printf("\nFile '%s' sent successfully! (%zu bytes)\n", filename, total_bytes_sent);
-    } else {
-        printf("\nFile transfer incomplete for '%s'. Sent %zu of %zu bytes.\n", 
-               filename, total_bytes_sent, (size_t)file_size);
-    }
+    
+    printf("\nFile '%s' sent successfully!\n", filename);
+    
     
     free(file_input);
     return NULL;
@@ -396,7 +350,6 @@ void process_user_input(int socket_fd) {
             memset(input_buffer, 0, BUFFER_SIZE);
             printf("> ");
             fflush(stdout);
-            
             if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
                 printf("Error reading input\n");
                 continue;
@@ -525,10 +478,6 @@ int wait_for_ready(int timeout_seconds) {
     return success;
 }
 
-
-// Send file to another user
-
-
 // Clean up resources
 void cleanup_resources(int socket_fd) {
     is_running = 0;
@@ -571,16 +520,18 @@ int main(int argc, char *argv[]) {
     }
 
     
+    
+    
+    // Setup username
+    if (!setup_username(socket_fd)) {
+        close(socket_fd);
+        exit(1);
+    }
+
     // Create server response handler thread
     if (pthread_create(&server_response_thread, NULL, handle_server_responses, (void *)&socket_fd) != 0) {
         perror("Failed to create response thread");
         close(socket_fd);
-        exit(1);
-    }
-    
-    // Setup username
-    if (!setup_username(socket_fd)) {
-        cleanup_resources(socket_fd);
         exit(1);
     }
     

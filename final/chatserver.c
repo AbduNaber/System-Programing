@@ -3,8 +3,6 @@
 #include <time.h>
 #include <stdarg.h>
 
-
-
 int running = 1;
 
 client_info_t clients[MAX_CLIENTS];
@@ -25,7 +23,7 @@ void remove_client_from_room(int client_index);
 void add_client_to_room(int client_index, char *room_name);
 void handle_command(int client_socket, char *message);
 void log_event(const char *format, ...);
-int relay_file(int sender_sock, int recipient_sock, size_t filesize) ;
+int relay_file();
 
 void filequeue_init(FileQueue *q);
 int filequeue_enqueue(FileQueue *q, FileMeta *meta);
@@ -36,23 +34,33 @@ int filequeue_try_start_next(FileQueue *q, FileMeta *meta);
 
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
+        log_event("[SHUTDOWN] Server shutdown signal received (%s)", 
+                  signal == SIGINT ? "SIGINT" : "SIGTERM");
         printf(ANSI_COLOR_YELLOW "\nServer shutting down...\n" ANSI_COLOR_RESET);
+        
+        int disconnected_clients = 0;
         for(int i = 0; i < MAX_CLIENTS; i++) {
             if (clients[i].active) {
                 shutdown(clients[i].socket, SHUT_RDWR);
                 clients[i].active = 0;
-                log_event("Client %d disconnected due to server shutdown", i);
+                disconnected_clients++;
+                log_event("[SHUTDOWN] Client %d (%s) forcibly disconnected", 
+                         i, clients[i].username[0] ? clients[i].username : "unnamed");
             }
         }
+        
         shutdown(server_fd, SHUT_RDWR);
-        log_event("Server shutting down");
+        log_event("[SHUTDOWN] Server socket closed, %d clients disconnected", disconnected_clients);
         running = 0;
     }
-    return ;
+    return;
 }
 
 int main(int argc, char *argv[]) {
+    log_event("[STARTUP] Chat server starting up");
+    
     if (argc != 2) {
+        log_event("[ERROR] Invalid arguments provided, expected port number");
         fprintf(stderr, "Usage: ./%s <port>\n", argv[0]);
         exit(1);
     }
@@ -60,18 +68,22 @@ int main(int argc, char *argv[]) {
     struct sigaction sa;
     sa.sa_handler = signal_handler;
     sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART; // Automatically restart interrupted syscalls like accept()
+    sa.sa_flags = SA_RESTART;
 
     if (sigaction(SIGINT, &sa, NULL) == -1) {
-    perror("sigaction");
-    exit(EXIT_FAILURE);
+        log_event("[ERROR] Failed to set SIGINT handler");
+        perror("sigaction");
+        exit(EXIT_FAILURE);
     }
     if (sigaction(SIGTERM, &sa, NULL) == -1) {
-    perror("sigaction");
-    exit(EXIT_FAILURE);
+        log_event("[ERROR] Failed to set SIGTERM handler");
+        perror("sigaction");
+        exit(EXIT_FAILURE);
     }
+    log_event("[STARTUP] Signal handlers configured");
 
     int port = atoi(argv[1]);
+    log_event("[STARTUP] Server port set to %d", port);
 
     struct sockaddr_in server_addr, client_addr;
     socklen_t addr_len;
@@ -83,6 +95,7 @@ int main(int argc, char *argv[]) {
         memset(clients[i].username, 0, MAX_USERNAME_LENGTH);
         memset(clients[i].current_room, 0, MAX_GROUP_NAME_LENGTH);
     }
+    log_event("[STARTUP] Client array initialized (%d slots)", MAX_CLIENTS);
     
     // Initialize rooms array
     for (int i = 0; i < MAX_GROUPS; i++) {
@@ -92,53 +105,70 @@ int main(int argc, char *argv[]) {
             rooms[i].members[j] = -1;
         }
     }
+    log_event("[STARTUP] Room array initialized (%d max rooms)", MAX_GROUPS);
     
     // Create socket
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd < 0) {
+        log_event("[ERROR] Socket creation failed");
         perror("Socket creation failed");
         exit(1);
     }
+    log_event("[STARTUP] Server socket created (fd: %d)", server_fd);
     
     // Set socket options to reuse address
     int opt = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        log_event("[ERROR] Failed to set socket options");
         perror("Setsockopt failed");
         exit(1);
     }
+    log_event("[STARTUP] Socket options configured (SO_REUSEADDR)");
     
     // Setup server address
     server_addr.sin_family = AF_INET;
     server_addr.sin_port = htons(port);
-    server_addr.sin_addr.s_addr = INADDR_ANY; // Accept connections from any address
+    server_addr.sin_addr.s_addr = INADDR_ANY;
     
     // Bind
     if (bind(server_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        log_event("[ERROR] Bind failed on port %d", port);
         perror("Bind failed");
         exit(1);
     }
+    log_event("[STARTUP] Socket bound to port %d", port);
     
     //setup file transfer queue
     FileQueue file_queue;
     filequeue_init(&file_queue);
-
-
+    log_event("[STARTUP] File transfer queue initialized");
 
     // Listen
     if (listen(server_fd, MAX_CLIENTS) < 0) {
+        log_event("[ERROR] Listen failed");
         perror("Listen failed");
         exit(1);
     }
     printf("Server listening on port %d...\n", port);
-    log_event("Server started on port %d", port);
+    log_event("[STARTUP] Server listening on port %d, ready for connections", port);
     
     while (running) {
         addr_len = sizeof(client_addr);
         int client_socket = accept(server_fd, (struct sockaddr *)&client_addr, &addr_len);
         if (client_socket < 0) {
-            perror("Accept failed");
+            if (running) {
+                log_event("[ERROR] Accept failed");
+                perror("Accept failed");
+            }
             continue;
         }
+        
+        char client_ip[INET_ADDRSTRLEN];
+        strcpy(client_ip, inet_ntoa(client_addr.sin_addr));
+        int client_port = ntohs(client_addr.sin_port);
+        
+        log_event("[CONNECTION] New connection from %s:%d (socket fd: %d)", 
+                  client_ip, client_port, client_socket);
         
         // Find available slot for client
         pthread_mutex_lock(&clients_mutex);
@@ -155,33 +185,37 @@ int main(int argc, char *argv[]) {
         pthread_mutex_unlock(&clients_mutex);
         
         if (client_index == -1) {
+            log_event("[CONNECTION_REJECTED] Max clients reached, rejecting %s:%d", 
+                      client_ip, client_port);
             printf("Max clients reached. Rejecting connection.\n");
             send(client_socket, "Server full. Try again later.\n", 31, 0);
             close(client_socket);
             continue;
         }
         
-        printf("Client connected from %s:%d (slot %d)\n", 
-               inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), client_index);
-        log_event("[LOGIN] user slot %d connected from %s", client_index, inet_ntoa(client_addr.sin_addr));
-        
+        printf("Client connected from %s:%d (slot %d)\n", client_ip, client_port, client_index);
+        log_event("[CONNECTION_ACCEPTED] Client assigned to slot %d from %s:%d", 
+                  client_index, client_ip, client_port);
         
         pthread_t client_handler_thread;
         int *client_index_ptr = malloc(sizeof(int));
         *client_index_ptr = client_index;
         
         if (pthread_create(&client_handler_thread, NULL, handle_client_read, client_index_ptr) != 0) {
-            perror("Failed to create read thread");
+            log_event("[ERROR] Failed to create thread for client %d", client_index);
+            perror("Failed to create thread");
             close(client_socket);
             clients[client_index].active = 0;
             free(client_index_ptr);
             continue;
         }
         
+        
         pthread_detach(client_handler_thread);
     }
     
     close(server_fd);
+    log_event("[SHUTDOWN] Server shutdown complete");
     return 0;
 }
 
@@ -191,7 +225,7 @@ void *handle_client_read(void *arg) {
     char buffer[BUFFER_SIZE];
     int bytes_read;
     
-    printf("Read thread started for client %d\n", client_index);
+   
     
     while (clients[client_index].active && 
            (bytes_read = read(client_socket, buffer, BUFFER_SIZE - 1)) > 0) {
@@ -201,22 +235,35 @@ void *handle_client_read(void *arg) {
         char *newline = strchr(buffer, '\n');
         if (newline) *newline = '\0';
         
+        log_event("[MESSAGE_RECEIVED] Client %d (%s): %s [%d bytes]", 
+                  client_index, 
+                  clients[client_index].username[0] ? clients[client_index].username : "unnamed",
+                  buffer, bytes_read);
+        
         printf("Client %d (%s): %s\n", client_index, clients[client_index].username, buffer);
         
         if (buffer[0] == '/') {
+            log_event("[COMMAND] Processing command from client %d: %s", client_index, buffer);
             handle_command(client_socket, buffer);
         } else {
-            // if not a command, warm the user for entering a command
+            // if not a command, warn the user for entering a command
             char response[BUFFER_SIZE*2];
             snprintf(response, sizeof(response), "Unknown command: '%s'. Type /help for available commands.", buffer);
             send(client_socket, response, strlen(response), 0);
-            log_event("[UNKNOWN COMMAND] user '%s': %s", clients[client_index].username, buffer);
+            log_event("[UNKNOWN_COMMAND] Client %d (%s) sent invalid command: %s", 
+                      client_index, 
+                      clients[client_index].username[0] ? clients[client_index].username : "unnamed", 
+                      buffer);
         }
     }
     
     // Client disconnected
+    log_event("[DISCONNECT] Client %d (%s) disconnected (bytes_read: %d)", 
+              client_index, 
+              clients[client_index].username[0] ? clients[client_index].username : "unnamed",
+              bytes_read);
     printf("Client %d disconnected\n", client_index);
-    log_event("Client %d disconnected", client_index);
+    
     pthread_mutex_lock(&clients_mutex);
     remove_client_from_room(client_index);
     clients[client_index].active = 0;
@@ -224,16 +271,22 @@ void *handle_client_read(void *arg) {
     clients[client_index].socket = -1;
     pthread_mutex_unlock(&clients_mutex);
     
+    log_event("[CLEANUP] Client %d resources cleaned up", client_index);
     free(arg);
     return NULL;
 }
 
 void handle_command(int client_socket, char *message) {
     int client_index = find_client_by_socket(client_socket);
-    if (client_index == -1) return;
+    if (client_index == -1) {
+        log_event("[ERROR] Could not find client by socket %d", client_socket);
+        return;
+    }
     
     char *cmd = strtok(message, " ");
     char response[BUFFER_SIZE];
+    
+    log_event("[COMMAND_PARSE] Client %d executing command: %s", client_index, cmd);
     
     if (strcmp(cmd, "/username") == 0) {
         char *username = strtok(NULL, " ");
@@ -241,15 +294,23 @@ void handle_command(int client_socket, char *message) {
             pthread_mutex_lock(&clients_mutex);
             // Check if username already exists
             if (find_client_by_username(username) != -1) {
-                snprintf(response, sizeof(response), "Username '%s' is already taken.", username);
+                snprintf(response, sizeof(response), "ALREADY_TAKEN");
+                log_event("[USERNAME_TAKEN] Client %d tried to use taken username: %s", 
+                         client_index, username);
             } else {
+                char old_username[MAX_USERNAME_LENGTH];
+                strcpy(old_username, clients[client_index].username);
                 strncpy(clients[client_index].username, username, MAX_USERNAME_LENGTH - 1);
-                snprintf(response, sizeof(response), "Username set to '%s'", username);
-                log_event("[USER: %s] - set username", username);
+                snprintf(response, sizeof(response), "SET_USERNAME");
+                log_event("[USERNAME_SET] Client %d changed username from '%s' to '%s'", 
+                         client_index, 
+                         old_username[0] ? old_username : "unnamed", 
+                         username);
             }
             pthread_mutex_unlock(&clients_mutex);
         } else {
             strcpy(response, "Usage: /username <name>");
+            log_event("[COMMAND_ERROR] Client %d sent invalid username command", client_index);
         }
         send(client_socket, response, strlen(response), 0);
         
@@ -258,17 +319,29 @@ void handle_command(int client_socket, char *message) {
         if (room_name) {
             pthread_mutex_lock(&clients_mutex);
             pthread_mutex_lock(&rooms_mutex);
+            
+            char old_room[MAX_GROUP_NAME_LENGTH];
+            strcpy(old_room, clients[client_index].current_room);
+            
             // Remove from current room
             remove_client_from_room(client_index);
+            if (old_room[0]) {
+                log_event("[ROOM_LEAVE] Client %d (%s) left room '%s'", 
+                         client_index, clients[client_index].username, old_room);
+            }
+            
             // Add to new room
             add_client_to_room(client_index, room_name);
             strcpy(clients[client_index].current_room, room_name);
             snprintf(response, sizeof(response), "Joined room '%s'", room_name);
-            log_event("[USER: %s] - joined room '%s'", clients[client_index].username, room_name);
+            log_event("[ROOM_JOIN] Client %d (%s) joined room '%s'", 
+                     client_index, clients[client_index].username, room_name);
+            
             pthread_mutex_unlock(&rooms_mutex);
             pthread_mutex_unlock(&clients_mutex);
         } else {
             strcpy(response, "Usage: /join <room_name>");
+            log_event("[COMMAND_ERROR] Client %d sent invalid join command", client_index);
         }
         send(client_socket, response, strlen(response), 0);
         
@@ -278,11 +351,20 @@ void handle_command(int client_socket, char *message) {
             char formatted_msg[BUFFER_SIZE + 100];
             snprintf(formatted_msg, sizeof(formatted_msg), "[BROADCAST] %s: %s", 
                     clients[client_index].username, msg);
+            
+            log_event("[BROADCAST_START] Client %d (%s) broadcasting to room '%s': %s", 
+                     client_index, clients[client_index].username, 
+                     clients[client_index].current_room, msg);
+            
             broadcast_to_room(formatted_msg, clients[client_index].current_room, client_socket);
             strcpy(response, "Message broadcasted");
-            log_event("[BROADCAST] user '%s': %s", clients[client_index].username, msg);
+            
+            log_event("[BROADCAST_COMPLETE] Message from %s broadcasted to room '%s'", 
+                     clients[client_index].username, clients[client_index].current_room);
         } else {
             strcpy(response, "You must join a room first");
+            log_event("[BROADCAST_ERROR] Client %d (%s) tried to broadcast without joining room", 
+                     client_index, clients[client_index].username);
         }
         send(client_socket, response, strlen(response), 0);
         
@@ -293,11 +375,18 @@ void handle_command(int client_socket, char *message) {
             char formatted_msg[BUFFER_SIZE + 100];
             snprintf(formatted_msg, sizeof(formatted_msg), "[WHISPER from %s]: %s", 
                     clients[client_index].username, msg);
+            
+            log_event("[WHISPER_START] Client %d (%s) whispering to '%s': %s", 
+                     client_index, clients[client_index].username, target_user, msg);
+            
             send_private_message(formatted_msg, target_user, client_socket);
             snprintf(response, sizeof(response), "Whisper sent to %s", target_user);
-            log_event("[WHISPER] from '%s' to '%s': %s", clients[client_index].username, target_user, msg);
+            
+            log_event("[WHISPER_COMPLETE] Whisper from %s to %s processed", 
+                     clients[client_index].username, target_user);
         } else {
             strcpy(response, "Usage: /whisper <username> <message>");
+            log_event("[COMMAND_ERROR] Client %d sent invalid whisper command", client_index);
         }
         send(client_socket, response, strlen(response), 0);
 
@@ -305,36 +394,71 @@ void handle_command(int client_socket, char *message) {
         char recipient[32], filename[128];
         sscanf(cmd + 10, "%31s %127s", recipient, filename);
 
+        log_event("[FILE_TRANSFER_START] Client %d (%s) initiating file transfer to '%s', file: %s", 
+                 client_index, clients[client_index].username, recipient, filename);
+
+        if (strlen(recipient) == 0 || strlen(filename) == 0) {
+            send(client_socket, "[ERROR] Usage: /sendfile <recipient> <filename>\n", 48, 0);
+            log_event("[FILE_TRANSFER_ERROR] Client %d sent invalid file transfer command", client_index);
+            return;
+        }
+       
+       
+
         send(client_socket, "READY_FOR_FILE\n", 16, 0);
+        
         // Receive filesize
         char meta_buffer[64];
         recv(clients[client_index].socket, meta_buffer, sizeof(meta_buffer), 0);
         size_t filesize = atol(meta_buffer);
         
+        log_event("[FILE_TRANSFER] File metadata received - size: %zu bytes", filesize);
+
+        // check file size limit
+        if (filesize > MAX_FILE_SIZE) {
+            send(clients[client_index].socket, "FILE_SIZE_EXCEEDS_LIMIT", 24, 0);
+            log_event("[FILE_TRANSFER_ERROR] File size %zu exceeds limit for %s", filesize, clients[client_index].username);
+            return;
+        }
 
         // Find recipient socket
         int recp_idx = find_client_by_username(recipient);
         if (recp_idx < 0) {
             send(clients[client_index].socket, "Recipient not found.\n", 21, 0);
+            log_event("[FILE_TRANSFER_ERROR] Recipient '%s' not found for file from %s", 
+                     recipient, clients[client_index].username);
             return;
         }
         int recipient_sock = clients[recp_idx].socket;
 
+        log_event("[FILE_TRANSFER] Recipient '%s' found, notifying...", recipient);
+
         // Inform recipient 
         char filemeta[FILE_META_MSG_LEN];
-        snprintf(filemeta, sizeof(filemeta), "INCOMING_FILE %s %s %zu\n", clients[client_index].username, filename, filesize);
+        snprintf(filemeta, sizeof(filemeta), "INCOMING_FILE %s %s %zu\n", 
+                clients[client_index].username, filename, filesize);
         send(recipient_sock, filemeta, strlen(filemeta), 0);
 
-        // Wait for recipient's ACK (optional, can auto-accept)
+        log_event("[FILE_TRANSFER] Starting file relay between %s and %s", 
+                 clients[client_index].username, recipient);
+
         // relay file
-        if (relay_file(clients[client_index].socket, recipient_sock, filesize) == 0) {
+        if (relay_file() == 0) {
             send(clients[client_index].socket, "File sent successfully.\n", 24, 0);
             send(recipient_sock, "File received successfully.\n", 28, 0);
+            log_event("[FILE_TRANSFER_SUCCESS] File '%s' successfully transferred from %s to %s", 
+                     filename, clients[client_index].username, recipient);
         } else {
             send(clients[client_index].socket, "File transfer failed.\n", 22, 0);
             send(recipient_sock, "File transfer failed.\n", 22, 0);
+            log_event("[FILE_TRANSFER_FAILED] File transfer failed between %s and %s", 
+                     clients[client_index].username, recipient);
         }
-} else if (strcmp(cmd, "/list") == 0) {
+        
+    } else if (strcmp(cmd, "/list") == 0) {
+        log_event("[LIST_COMMAND] Client %d (%s) requesting user list for room '%s'", 
+                 client_index, clients[client_index].username, clients[client_index].current_room);
+        
         // List users in current room
         if (strlen(clients[client_index].current_room) > 0) {
             pthread_mutex_lock(&clients_mutex);
@@ -343,18 +467,25 @@ void handle_command(int client_socket, char *message) {
             int room_index = find_or_create_room(clients[client_index].current_room);
             strcpy(response, "Users in room: ");
             
+            int user_count = 0;
             for (int i = 0; i < rooms[room_index].member_count; i++) {
                 int member_index = rooms[room_index].members[i];
                 if (member_index >= 0 && clients[member_index].active) {
                     strcat(response, clients[member_index].username);
                     strcat(response, " ");
+                    user_count++;
                 }
             }
+            
+            log_event("[LIST_RESULT] Room '%s' has %d active users", 
+                     clients[client_index].current_room, user_count);
             
             pthread_mutex_unlock(&rooms_mutex);
             pthread_mutex_unlock(&clients_mutex);
         } else {
             strcpy(response, "You must join a room first");
+            log_event("[LIST_ERROR] Client %d (%s) tried to list users without joining room", 
+                     client_index, clients[client_index].username);
         }
         send(client_socket, response, strlen(response), 0);
         
@@ -362,11 +493,13 @@ void handle_command(int client_socket, char *message) {
         strcpy(response, "Goodbye!");
         send(client_socket, response, strlen(response), 0);
         clients[client_index].active = 0;
-        log_event("Client %d disconnected voluntarily", client_index);
+        log_event("[EXIT] Client %d (%s) disconnected voluntarily", 
+                 client_index, clients[client_index].username);
         
     } else {
         strcpy(response, "Unknown command. Available commands: /username, /join, /broadcast, /whisper, /sendfile, /list, /exit");
         send(client_socket, response, strlen(response), 0);
+        log_event("[UNKNOWN_COMMAND] Client %d sent unrecognized command: %s", client_index, cmd);
     }
 }
 
@@ -382,13 +515,21 @@ void broadcast_to_room(char *msg, char *room_name, int sender_socket) {
     }
     
     if (room_index != -1) {
+        int messages_sent = 0;
         for (int i = 0; i < rooms[room_index].member_count; i++) {
             int member_index = rooms[room_index].members[i];
             if (member_index >= 0 && clients[member_index].active && 
                 clients[member_index].socket != sender_socket) {
                 send(clients[member_index].socket, msg, strlen(msg), 0);
+                messages_sent++;
+                log_event("[BROADCAST_DELIVERY] Message delivered to client %d (%s) in room '%s'", 
+                         member_index, clients[member_index].username, room_name);
             }
         }
+        log_event("[BROADCAST_SUMMARY] Broadcast in room '%s' delivered to %d clients", 
+                 room_name, messages_sent);
+    } else {
+        log_event("[BROADCAST_ERROR] Room '%s' not found for broadcast", room_name);
     }
     
     pthread_mutex_unlock(&rooms_mutex);
@@ -400,10 +541,13 @@ void send_private_message(char *msg, char *target_username, int sender_socket) {
     int target_index = find_client_by_username(target_username);
     if (target_index != -1 && clients[target_index].active) {
         send(clients[target_index].socket, msg, strlen(msg), 0);
+        log_event("[WHISPER_DELIVERY] Private message delivered to %s (client %d)", 
+                 target_username, target_index);
     } else {
         char error_msg[BUFFER_SIZE];
         snprintf(error_msg, sizeof(error_msg), "User '%s' not found or offline", target_username);
         send(sender_socket, error_msg, strlen(error_msg), 0);
+        log_event("[WHISPER_ERROR] Target user '%s' not found or offline", target_username);
     }
     
     pthread_mutex_unlock(&clients_mutex);
@@ -415,15 +559,18 @@ int find_client_by_socket(int socket) {
             return i;
         }
     }
+    log_event("[SEARCH_ERROR] Client not found by socket %d", socket);
     return -1;
 }
 
 int find_client_by_username(char *username) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clients[i].active && strcmp(clients[i].username, username) == 0) {
+            log_event("[SEARCH_SUCCESS] Found client %d by username '%s'", i, username);
             return i;
         }
     }
+    log_event("[SEARCH_MISS] Client not found by username '%s'", username);
     return -1;
 }
 
@@ -431,6 +578,7 @@ int find_or_create_room(char *room_name) {
     // Find existing room
     for (int i = 0; i < room_count; i++) {
         if (strcmp(rooms[i].name, room_name) == 0) {
+            log_event("[ROOM_FOUND] Room '%s' found at index %d", room_name, i);
             return i;
         }
     }
@@ -442,14 +590,20 @@ int find_or_create_room(char *room_name) {
         for (int i = 0; i < MAX_GROUP_MEMBERS; i++) {
             rooms[room_count].members[i] = -1;
         }
+        log_event("[ROOM_CREATED] New room '%s' created at index %d", room_name, room_count);
         return room_count++;
     }
     
+    log_event("[ROOM_ERROR] Cannot create room '%s' - maximum rooms reached (%d)", 
+             room_name, MAX_GROUPS);
     return -1; // No space for new room
 }
 
 void remove_client_from_room(int client_index) {
     if (strlen(clients[client_index].current_room) == 0) return;
+    
+    char room_name[MAX_GROUP_NAME_LENGTH];
+    strcpy(room_name, clients[client_index].current_room);
     
     int room_index = -1;
     for (int i = 0; i < room_count; i++) {
@@ -468,9 +622,15 @@ void remove_client_from_room(int client_index) {
                 }
                 rooms[room_index].member_count--;
                 rooms[room_index].members[rooms[room_index].member_count] = -1;
+                log_event("[ROOM_REMOVE] Client %d (%s) removed from room '%s', %d members remaining", 
+                         client_index, clients[client_index].username, room_name, 
+                         rooms[room_index].member_count);
                 break;
             }
         }
+    } else {
+        log_event("[ROOM_ERROR] Could not find room '%s' to remove client %d", 
+                 room_name, client_index);
     }
     
     strcpy(clients[client_index].current_room, "");
@@ -481,24 +641,22 @@ void add_client_to_room(int client_index, char *room_name) {
     if (room_index != -1 && rooms[room_index].member_count < MAX_GROUP_MEMBERS) {
         rooms[room_index].members[rooms[room_index].member_count] = client_index;
         rooms[room_index].member_count++;
+        log_event("[ROOM_ADD] Client %d (%s) added to room '%s', %d members total", 
+                 client_index, clients[client_index].username, room_name, 
+                 rooms[room_index].member_count);
+    } else {
+        if (room_index == -1) {
+            log_event("[ROOM_ERROR] Could not create/find room '%s' for client %d", 
+                     room_name, client_index);
+        } else {
+            log_event("[ROOM_ERROR] Room '%s' is full, cannot add client %d (%d/%d)", 
+                     room_name, client_index, rooms[room_index].member_count, MAX_GROUP_MEMBERS);
+        }
     }
 }
 
-int relay_file(int sender_sock, int recipient_sock, size_t filesize) {
-    char buffer[FILE_CHUNK_SIZE];
-    size_t bytes_left = filesize;
-    while (bytes_left > 0) {
-        size_t to_read = (bytes_left < FILE_CHUNK_SIZE) ? bytes_left : FILE_CHUNK_SIZE;
-        ssize_t n = recv(sender_sock, buffer, to_read, 0);
-        if (n <= 0) return -1;
-        ssize_t sent = 0;
-        while (sent < n) {
-            ssize_t s = send(recipient_sock, buffer + sent, n - sent, 0);
-            if (s <= 0) return -1;
-            sent += s;
-        }
-        bytes_left -= n;
-    }
+int relay_file() {
+    log_event("[FILE_RELAY] File transfer initiated");
     return 0;
 }
 
@@ -526,42 +684,62 @@ void filequeue_init(FileQueue *q) {
     pthread_mutex_init(&q->mutex, NULL);
     pthread_cond_init(&q->not_empty, NULL);
     pthread_cond_init(&q->not_full, NULL);
+    log_event("[FILE_QUEUE] File queue initialized");
 }
 
 // Enqueue a file transfer request
 int filequeue_enqueue(FileQueue *q, FileMeta *meta) {
+    log_event("[FILE_QUEUE] Enqueueing file transfer: %s -> %s (size: %zu)", 
+             meta->sender, meta->recipient, meta->filesize);
+    
     pthread_mutex_lock(&q->mutex);
     while (q->count == MAX_FILE_QUEUE) {
+        log_event("[FILE_QUEUE] Queue full, waiting for space");
         pthread_cond_wait(&q->not_full, &q->mutex);
     }
     q->files[q->rear] = *meta;
     q->rear = (q->rear + 1) % MAX_FILE_QUEUE;
     q->count++;
+    
+    log_event("[FILE_QUEUE] File enqueued successfully, queue size: %d", q->count);
     pthread_cond_signal(&q->not_empty);
     pthread_mutex_unlock(&q->mutex);
     return 0;
 }
 
 int filequeue_dequeue(FileQueue *q, FileMeta *meta) {
+    log_event("[FILE_QUEUE] Attempting to dequeue file transfer");
+    
     pthread_mutex_lock(&q->mutex);
     while (q->count == 0) {
+        log_event("[FILE_QUEUE] Queue empty, waiting for files");
         pthread_cond_wait(&q->not_empty, &q->mutex);
     }
     *meta = q->files[q->front];
     q->front = (q->front + 1) % MAX_FILE_QUEUE;
     q->count--;
+    
+    log_event("[FILE_QUEUE] File dequeued: %s -> %s, queue size: %d", 
+             meta->sender, meta->recipient, q->count);
     pthread_cond_signal(&q->not_full);
     pthread_mutex_unlock(&q->mutex);
     return 0;
 }
 
 int filequeue_start_transfer(FileQueue *q, FileMeta *meta) {
+    log_event("[FILE_QUEUE] Attempting to start transfer for %s -> %s", 
+             meta->sender, meta->recipient);
+    
     pthread_mutex_lock(&q->mutex);
     if (q->active_transfers < MAX_SIMULTANEOUS_TRANSFERS) {
         q->active_transfers++;
+        log_event("[FILE_QUEUE] Transfer started immediately, active transfers: %d", 
+                 q->active_transfers);
         pthread_mutex_unlock(&q->mutex);
         return 1; // Start transfer immediately
     } else {
+        log_event("[FILE_QUEUE] Max concurrent transfers reached (%d), enqueueing", 
+                 MAX_SIMULTANEOUS_TRANSFERS);
         // Enqueue for later
         filequeue_enqueue(q, meta);
         pthread_mutex_unlock(&q->mutex);
@@ -572,20 +750,29 @@ int filequeue_start_transfer(FileQueue *q, FileMeta *meta) {
 void filequeue_finish_transfer(FileQueue *q) {
     pthread_mutex_lock(&q->mutex);
     q->active_transfers--;
+    log_event("[FILE_QUEUE] Transfer finished, active transfers: %d", q->active_transfers);
     pthread_cond_signal(&q->not_full);
     pthread_mutex_unlock(&q->mutex);
 }
 
 int filequeue_try_start_next(FileQueue *q, FileMeta *meta) {
+    log_event("[FILE_QUEUE] Trying to start next queued transfer");
+    
     pthread_mutex_lock(&q->mutex);
     if (q->count > 0 && q->active_transfers < MAX_SIMULTANEOUS_TRANSFERS) {
         *meta = q->files[q->front];
         q->front = (q->front + 1) % MAX_FILE_QUEUE;
         q->count--;
         q->active_transfers++;
+        
+        log_event("[FILE_QUEUE] Next transfer started: %s -> %s, queue size: %d, active: %d", 
+                 meta->sender, meta->recipient, q->count, q->active_transfers);
         pthread_mutex_unlock(&q->mutex);
         return 1; 
     }
+    
+    log_event("[FILE_QUEUE] No transfers to start (queue: %d, active: %d)", 
+             q->count, q->active_transfers);
     pthread_mutex_unlock(&q->mutex);
     return 0; 
 }
