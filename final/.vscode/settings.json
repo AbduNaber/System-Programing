@@ -8,6 +8,7 @@
         "string_view": "c",
         "initializer_list": "c",
         "utility": "c",
-        "cstring": "c"
+        "cstring": "c",
+        "socket.h": "c"
     }
 }

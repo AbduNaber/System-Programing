@@ -19,28 +19,22 @@
 #include <fcntl.h>
 
 
+
 #define PORT 12345
 #define BUFFER_SIZE 1024
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 15
 #define MAX_MESSAGE_LENGTH 256
 #define MAX_USERNAME_LENGTH 16
 #define MAX_GROUP_NAME_LENGTH 32
-#define MAX_GROUPS 10
+#define MAX_GROUPS 15
 #define MAX_GROUP_MEMBERS 10
-#define FILE_META_MSG_LEN 256
+#define FILE_META_MSG_LEN 256*2
+
 
 #define MAX_SIMULTANEOUS_TRANSFERS 5
-#define MAX_FILE_QUEUE 32
+#define MAX_FILE_QUEUE 5
 
 #define MAX_FILE_SIZE (1024 * 1024 * 3) // 3 MB
-
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_YELLOW  "\x1b[33m"
-#define ANSI_COLOR_BLUE    "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN    "\x1b[36m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
 
 
 
@@ -61,11 +55,16 @@ typedef struct {
 
 
 typedef struct {
-    client_info_t *sender;
-    client_info_t *recipient;
-    char filename[128];
+    char sender[MAX_USERNAME_LENGTH];
+    char recipient[MAX_USERNAME_LENGTH]; 
+    char filename[256];
     size_t filesize;
+    int sender_socket;
+    int recipient_socket;
+    time_t enqueue_time;
+    time_t start_time;  // Add this to track when transfer starts
 } FileMeta;
+
 
 
 typedef struct {
