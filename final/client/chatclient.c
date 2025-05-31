@@ -1,5 +1,5 @@
 // Compile: gcc chatclient.c -o chatclient -lpthread
-#include "chatDefination.h"
+#include "../shared/chatDefination.h"
 
 // Enhanced color definitions for better user experience
 #define ANSI_COLOR_SUCCESS      "\x1b[32m"      // Green for success messages
@@ -43,7 +43,7 @@ void process_user_input(int socket_fd);
 void cleanup_resources(int socket_fd);
 int wait_for_ready(int timeout_seconds);
 int handle_send_file(int socket_fd, const char *recipient, const char *filename);
-
+int validate_room_name(const char *room_name) ;
 void print_status_message(const char *message, const char *color);
 int wait_for_file_transfer(int timeout_seconds) ;
 
@@ -90,8 +90,6 @@ void print_status_message(const char *message, const char *color) {
     fflush(stdout);
 }
 
-
-
 // Handle server responses in a separate thread
 void *handle_server_responses(void *arg) {
     int socket_fd = *(int *)arg;
@@ -124,22 +122,21 @@ void *handle_server_responses(void *arg) {
 
                 print_status_message("[ERROR] Recipient not found. Please check the username.", ANSI_COLOR_ERROR);
                 pthread_mutex_lock(&ready_mutex);
-                ready_for_file = 0;
+                ready_for_file = -1;
                 pthread_cond_signal(&ready_cond);
                 pthread_mutex_unlock(&ready_mutex);
             }
             else if (strncmp(response_buffer, "RECIPIENT_OFFLINE", 17) == 0) {
                 print_status_message("[ERROR] Recipient is offline. Cannot send file.", ANSI_COLOR_ERROR);
+                 pthread_mutex_lock(&ready_mutex);
+                ready_for_file = 0;
+                pthread_cond_signal(&ready_cond);
+                pthread_mutex_unlock(&ready_mutex);
             }
             else if (strncmp(response_buffer, "FILE_EXISTS", 11) == 0) {
                 print_status_message("[WARNING] File already exists on server. Renaming to avoid conflict.", ANSI_COLOR_WARNING);
             }
-            else if (strncmp(response_buffer, "READY_FOR_FILE", 15) == 0) {
-                pthread_mutex_lock(&ready_mutex);
-                ready_for_file = 1;
-                pthread_cond_signal(&ready_cond);
-                pthread_mutex_unlock(&ready_mutex);
-            }
+            
             else if(strncmp(response_buffer, "FILE_TRANSFER_SUCCESS", 21) == 0) {
                
 
@@ -348,7 +345,6 @@ int initialize_connection(const char *server_ip, int port) {
     return socket_fd;
 }
 
-/// Setup username with server
 // Setup username with server
 int setup_username(int socket_fd) {
     char input_buffer[BUFFER_SIZE];
@@ -395,7 +391,7 @@ int setup_username(int socket_fd) {
         if (!FD_ISSET(STDIN_FILENO, &read_fds)) {
             continue; // No stdin input, keep waiting
         }
-        
+         
         // Read username from stdin
         memset(input_buffer, 0, BUFFER_SIZE);
         if (fgets(input_buffer, sizeof(input_buffer), stdin) == NULL) {
@@ -467,6 +463,7 @@ int setup_username(int socket_fd) {
         // Check server response
         if (strncmp(response_buffer, "ALREADY_TAKEN", 13) == 0) {
             print_status_message("[ERROR] Username already taken. Please choose another.", ANSI_COLOR_ERROR);
+            printf(ANSI_COLOR_PROMPT "enter username: " ANSI_COLOR_RESET);
             continue; // Try again
         } else if (strncmp(response_buffer, "SET_USERNAME", 12) == 0) {
             printf(ANSI_COLOR_SUCCESS "\n[SUCCESS] Welcome " ANSI_COLOR_USERNAME "%s" ANSI_COLOR_SUCCESS "! Type " ANSI_COLOR_INFO "/help" ANSI_COLOR_SUCCESS " for available commands.\n" ANSI_COLOR_RESET, username);
@@ -474,6 +471,7 @@ int setup_username(int socket_fd) {
         } else {
             print_status_message("[ERROR] Unexpected server response", ANSI_COLOR_ERROR);
             printf(ANSI_COLOR_SYSTEM "%s" ANSI_COLOR_RESET "\n", response_buffer);
+            printf(ANSI_COLOR_PROMPT "enter username: " ANSI_COLOR_RESET);
             continue;
         }
     }
@@ -507,20 +505,15 @@ int handle_send_file(int socket_fd, const char *recipient, const char *filename)
     
     // Send the initial sendfile command to server
     char command_buffer[BUFFER_SIZE];
-    snprintf(command_buffer, sizeof(command_buffer), "/sendfile %s %s\n", recipient, filename);
+    snprintf(command_buffer, sizeof(command_buffer), "/sendfile %s %s %zu", filename, recipient, (size_t)file_size);
     
+    printf("[DEBUG] Sending command: '%s'\n", command_buffer);  // Debug output
+
     if (send(socket_fd, command_buffer, strlen(command_buffer), 0) < 0) {
         printf(ANSI_COLOR_ERROR "[ERROR] Failed to send file transfer command for " ANSI_COLOR_FILENAME "'%s'" ANSI_COLOR_RESET "\n", filename);
         return 0;
     }
-    
-    // Send file size to server
-    char size_buffer[64] = {0};
-    snprintf(size_buffer, sizeof(size_buffer), "%zu", (size_t)file_size);
-    if (send(socket_fd, size_buffer,  strlen(size_buffer), 0) < 0) {
-        printf(ANSI_COLOR_ERROR "[ERROR] Failed to send file size for " ANSI_COLOR_FILENAME "'%s'" ANSI_COLOR_RESET "\n", filename);
-        return 0;
-    }
+
     print_status_message("[INFO] File transfer request sent. Waiting for server confirmation...", ANSI_COLOR_INFO);
     print_status_message("[WARNING] Please wait - file transfer will block other commands until complete.", ANSI_COLOR_WARNING);
     
@@ -539,7 +532,7 @@ int handle_send_file(int socket_fd, const char *recipient, const char *filename)
         
         return 0;
     }
-
+    printf("---%d---\n", ret_code);
     
     printf(ANSI_COLOR_SUCCESS "[SUCCESS] Server is ready! Starting file transfer for " ANSI_COLOR_FILENAME "'%s'" ANSI_COLOR_SUCCESS "..." ANSI_COLOR_RESET "\n", filename);
    
@@ -631,7 +624,7 @@ void process_user_input(int socket_fd) {
         // Modified sendfile command handling with blocking
         if (strncmp(input_buffer, "/sendfile ", 10) == 0) {
             char recipient[32], filename[128];
-            if (sscanf(input_buffer + 10, "%31s %127s", recipient, filename) == 2) {
+            if (sscanf(input_buffer + 10, " %127s %31s ", filename, recipient) == 2) {
                 // Set file transfer in progress flag
                 pthread_mutex_lock(&file_transfer_progress_mutex);
                 file_transfer_in_progress = 1;
@@ -650,13 +643,20 @@ void process_user_input(int socket_fd) {
                     fflush(stdout);
                 }
             } else {
-                print_status_message("[ERROR] Invalid syntax. Usage: /sendfile <recipient> <filename>", ANSI_COLOR_ERROR);
+                print_status_message("[ERROR] Invalid syntax. Usage: /sendfile <filename> <recipient> ", ANSI_COLOR_ERROR);
             }
             continue;
         }
         
         // Provide feedback for common commands
         if (strncmp(input_buffer, "/join ", 6) == 0) {
+
+           if (strlen(input_buffer) < 7 || !validate_room_name(input_buffer + 6)) {
+                print_status_message("[ERROR] Invalid room name. Use alphanumeric characters and underscores only (1-32 chars)", ANSI_COLOR_ERROR);
+                continue;
+            }
+        
+
             print_status_message("[INFO] Attempting to join room...", ANSI_COLOR_INFO);
         } else if (strncmp(input_buffer, "/whisper ", 9) == 0) {
             print_status_message("[INFO] Sending private message...", ANSI_COLOR_INFO);
@@ -677,6 +677,19 @@ void process_user_input(int socket_fd) {
     }
 }
 
+int validate_room_name(const char *room_name) {
+    size_t len = strlen(room_name);
+    if (len < 1 || len > 32) {
+        return 0; // Invalid length
+    }
+    for (size_t i = 0; i < len; i++) {
+        if (!isalnum(room_name[i]) && room_name[i] != '_') {
+            return 0; // Invalid character
+        }
+    }
+    return 1; // Valid room name
+}
+
 // Wait for server to signal readiness for file transfer
 int wait_for_ready(int timeout_seconds) {
     struct timespec ts;
@@ -688,7 +701,8 @@ int wait_for_ready(int timeout_seconds) {
     
     pthread_mutex_lock(&ready_mutex);
     
-    // Wait until ready_for_file is set or timeout occurs
+
+    
     while (!ready_for_file && rc != ETIMEDOUT) {
         rc = pthread_cond_timedwait(&ready_cond, &ready_mutex, &ts);
         
@@ -698,9 +712,11 @@ int wait_for_ready(int timeout_seconds) {
             return 0; // Client is shutting down
         }
     }
-    
+   
+   
     // Check the result after the loop
-    if (ready_for_file) {
+    if (ready_for_file == 1) {
+      
         ready_for_file = 0; // Reset for next use
         success = 1; // Success: ready signal received
     } 
