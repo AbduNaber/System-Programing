@@ -1,5 +1,5 @@
 for server use :
-./server/chatserver 5000
+.chatserver 5000
 
 for client use: 
-./client/chatclient 5000
+.chatclient 5000
